@@ -708,8 +708,9 @@ export function processGarmentImageSync(
     for (let i = 0; i < n; i++) dilatedCore[i] = dilatedCore[i] && fgFilled[i] ? 1 : 0;
     let fgOpen = fillInteriorPinholes(dilatedCore, w, h);
 
-    // Punch out enclosed studio-background armpit/sleeve-gap triangles on dark long-sleeve garments
-    if (bgL > 78.0) {
+    // Compute interior garment luminance & punch out enclosed studio-background armpit/hip slits on dark garments
+    let meanGarmentL = bgL;
+    if (bgL > 75.0) {
       let fgLsum = 0;
       let fgLcnt = 0;
       for (let i = 0; i < n; i += 4) {
@@ -718,12 +719,18 @@ export function processGarmentImageSync(
           fgLcnt++;
         }
       }
-      const meanGarmentL = fgLcnt > 0 ? fgLsum / fgLcnt : bgL;
+      meanGarmentL = fgLcnt > 0 ? fgLsum / fgLcnt : bgL;
       if (bgL - meanGarmentL > 40.0) {
+        const isGapPixel = (idx: number): boolean =>
+          Boolean(fgOpen[idx]) &&
+          !bgFlood[idx] &&
+          L[idx] > meanGarmentL + 38.0 &&
+          Math.hypot(a[idx] - bga, b[idx] - bgb) < 8.5;
+
         const visitedGap = new Uint8Array(n);
         const gapQueue = new Int32Array(n);
         for (let i = 0; i < n; i++) {
-          if (!fgOpen[i] || !passable[i] || bgFlood[i] || visitedGap[i]) continue;
+          if (!isGapPixel(i) || visitedGap[i]) continue;
           let head = 0;
           let tail = 0;
           let sumX = 0;
@@ -739,28 +746,28 @@ export function processGarmentImageSync(
             sumY += gy;
             if (gy > 0) {
               const nb = cur - w;
-              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+              if (isGapPixel(nb) && !visitedGap[nb]) {
                 visitedGap[nb] = 1;
                 gapQueue[tail++] = nb;
               }
             }
             if (gy + 1 < h) {
               const nb = cur + w;
-              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+              if (isGapPixel(nb) && !visitedGap[nb]) {
                 visitedGap[nb] = 1;
                 gapQueue[tail++] = nb;
               }
             }
             if (gx > 0) {
               const nb = cur - 1;
-              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+              if (isGapPixel(nb) && !visitedGap[nb]) {
                 visitedGap[nb] = 1;
                 gapQueue[tail++] = nb;
               }
             }
             if (gx + 1 < w) {
               const nb = cur + 1;
-              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+              if (isGapPixel(nb) && !visitedGap[nb]) {
                 visitedGap[nb] = 1;
                 gapQueue[tail++] = nb;
               }
@@ -770,10 +777,10 @@ export function processGarmentImageSync(
           const cx = sumX / tail;
           const cy = sumY / tail;
           const isLateralArmpitSlit =
-            tail >= 16 &&
+            tail >= 10 &&
             tail <= Math.floor(n * 0.04) &&
             cy > h * 0.28 &&
-            (cx < w * 0.36 || cx > w * 0.64);
+            (cx < w * 0.42 || cx > w * 0.58);
           if (isLateralArmpitSlit) {
             for (let k = 0; k < tail; k++) {
               fgOpen[gapQueue[k]] = 0;
@@ -783,8 +790,26 @@ export function processGarmentImageSync(
       }
     }
 
-    // Slice off bright JPEG 4:2:0 chroma-ringing halos AND pale neutral studio drop-shadows under dark hems/cuffs
-    const deepTrimSeed = erodeMask(fgOpen, w, h, 16);
+    // Slice off bright JPEG 4:2:0 chroma-ringing halos AND tall studio drop-shadows under dark hems/cuffs
+    const outerShadowSeed = erodeMask(fgOpen, w, h, 28);
+    if (bgL > 75.0 && bgL - meanGarmentL > 42.0) {
+      let strippedDeepShadow = false;
+      const deepShadowCutoffL = meanGarmentL + (bgL - meanGarmentL) * 0.35;
+      for (let i = 0; i < n; i++) {
+        if (fgOpen[i] && !outerShadowSeed[i]) {
+          const pixBgChroma = Math.hypot(a[i] - bga, b[i] - bgb);
+          if (pixBgChroma < 8.5 && L[i] > deepShadowCutoffL) {
+            fgOpen[i] = 0;
+            strippedDeepShadow = true;
+          }
+        }
+      }
+      if (strippedDeepShadow) {
+        fgOpen = largestConnectedComponent(fgOpen, w, h);
+      }
+    }
+
+    const deepTrimSeed = erodeMask(fgOpen, w, h, 14);
     let hasDeepTrim = false;
     for (let i = 0; i < n; i++) {
       if (deepTrimSeed[i]) {
@@ -800,7 +825,7 @@ export function processGarmentImageSync(
         deepTrimSeed,
         w,
         h,
-        22
+        18
       );
       let removedHalo = false;
       for (let i = 0; i < n; i++) {
@@ -809,7 +834,7 @@ export function processGarmentImageSync(
           const pixBgChroma = Math.hypot(a[i] - bga, b[i] - bgb);
           const shadowCutoffL =
             bgL > 75.0 && bgL - refL > 35.0 && pixBgChroma < 8.5
-              ? refL + (bgL - refL) * 0.40
+              ? refL + (bgL - refL) * 0.38
               : bgL - 9.0;
           if (bgL - refL > 15.0 && L[i] > shadowCutoffL) {
             fgOpen[i] = 0;
