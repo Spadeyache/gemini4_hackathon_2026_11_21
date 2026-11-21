@@ -504,15 +504,15 @@ function buildSculptedSleeveGeometry(
   const controlPts =
     style === 'long_relaxed'
       ? [
-          new THREE.Vector3(side * 0.195, -0.122, 0.002),
-          new THREE.Vector3(side * 0.278, -0.255, 0.009),
-          new THREE.Vector3(side * 0.318, -0.435, 0.019),
-          new THREE.Vector3(side * 0.312, -0.625, 0.014),
+          new THREE.Vector3(side * 0.168, -0.146, 0.002),
+          new THREE.Vector3(side * 0.268, -0.258, 0.009),
+          new THREE.Vector3(side * 0.312, -0.435, 0.019),
+          new THREE.Vector3(side * 0.308, -0.625, 0.014),
         ]
       : [
-          new THREE.Vector3(side * 0.192, -0.122, 0.002),
-          new THREE.Vector3(side * 0.278, -0.222, 0.006),
-          new THREE.Vector3(side * 0.344, -0.334, 0.009),
+          new THREE.Vector3(side * 0.168, -0.146, 0.002),
+          new THREE.Vector3(side * 0.264, -0.228, 0.006),
+          new THREE.Vector3(side * 0.332, -0.336, 0.009),
         ];
 
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal', 0.5);
@@ -538,14 +538,15 @@ function buildSculptedSleeveGeometry(
     const latAxis = new THREE.Vector3().crossVectors(tangent, zAxis).normalize();
     const depthAxis = new THREE.Vector3().crossVectors(latAxis, tangent).normalize();
 
+    const rootTaper = 0.76 + 0.24 * smoothstep(0, 0.38, t);
     const rLat =
-      style === 'long_relaxed'
-        ? 0.068 * (1 - t * 0.31) + Math.sin(t * Math.PI) * 0.005
-        : 0.069 * (1 - t * 0.09);
+      (style === 'long_relaxed'
+        ? 0.066 * (1 - t * 0.29) + Math.sin(t * Math.PI) * 0.005
+        : 0.066 * (1 - t * 0.08)) * rootTaper;
     const rDep =
-      style === 'long_relaxed'
-        ? 0.044 * (1 - t * 0.08) + Math.sin(t * Math.PI) * 0.004
-        : 0.045 * (1 + t * 0.12);
+      (style === 'long_relaxed'
+        ? 0.043 * (1 - t * 0.08) + Math.sin(t * Math.PI) * 0.004
+        : 0.044 * (1 + t * 0.12)) * rootTaper;
 
     for (let c = 0; c <= radialSegs; c++) {
       const u = c / radialSegs;
@@ -621,8 +622,9 @@ function buildCurvedKangarooPocketGeometry(profile: TorsoProfileParams): THREE.B
     curveSegments: 8,
   });
 
-  // Curve vertices in Z to hug the exact front fleece torso contour at y = -0.605 .. -0.43
+  // Curve vertices in Z to hug the exact front fleece torso contour at y = -0.605 .. -0.43 & tile UVs cleanly
   const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
   for (let i = 0; i < pos.count; i++) {
     const px = pos.getX(i);
     const pyLocal = pos.getY(i);
@@ -634,8 +636,12 @@ function buildCurvedKangarooPocketGeometry(profile: TorsoProfileParams): THREE.B
     const [, , surfaceZ] = evaluateTorsoSurfacePoint(approxTheta, vTorso, profile);
 
     pos.setXYZ(i, px, worldY, surfaceZ - 0.002 + pzLocal);
+    if (uv) {
+      uv.setXY(i, px * 10, pyLocal * 10);
+    }
   }
   pos.needsUpdate = true;
+  if (uv) uv.needsUpdate = true;
   geo.computeVertexNormals();
   return geo;
 }
@@ -891,16 +897,16 @@ export const HangingApparel3D: React.FC<HangingApparel3DProps> = ({
           ? buildConformalTorsoPatchGeometry(profile, {
               side: 'front',
               centerV: 0.63,
-              spanTheta: 0.98,
-              spanV: 0.37,
-              offsetZ: 0.0018,
+              spanTheta: 0.94,
+              spanV: 0.35,
+              offsetZ: 0.0065,
             })
           : buildConformalTorsoPatchGeometry(profile, {
               side: 'front',
               centerV: 0.58,
-              spanTheta: 1.06,
-              spanV: 0.4,
-              offsetZ: 0.0018,
+              spanTheta: 1.0,
+              spanV: 0.38,
+              offsetZ: 0.0058,
             });
 
     const backGraphicGeo =
@@ -908,9 +914,9 @@ export const HangingApparel3D: React.FC<HangingApparel3DProps> = ({
         ? buildConformalTorsoPatchGeometry(profile, {
             side: 'back',
             centerV: 0.56,
-            spanTheta: 1.08,
-            spanV: 0.42,
-            offsetZ: 0.0018,
+            spanTheta: 1.02,
+            spanV: 0.4,
+            offsetZ: 0.0062,
           })
         : cat === 'structured_tshirt'
           ? buildConformalTorsoPatchGeometry(profile, {
@@ -918,7 +924,7 @@ export const HangingApparel3D: React.FC<HangingApparel3DProps> = ({
               centerV: 0.8,
               spanTheta: 0.36,
               spanV: 0.13,
-              offsetZ: 0.0016,
+              offsetZ: 0.0055,
             })
           : null;
 
@@ -936,7 +942,7 @@ export const HangingApparel3D: React.FC<HangingApparel3DProps> = ({
         const vTorso = clamp(0.65 + (v - 0.5) * 0.18, 0.1, 0.85);
         const theta = varsityLeftTheta + (0.5 - u) * 0.42;
         const [tx, ty, tz] = evaluateTorsoSurfacePoint(theta, vTorso, profile);
-        pos.setXYZ(i, tx, ty, tz + 0.0052);
+        pos.setXYZ(i, tx, ty, tz + 0.0092);
       }
       pos.needsUpdate = true;
       frontGraphicGeo.computeVertexNormals();

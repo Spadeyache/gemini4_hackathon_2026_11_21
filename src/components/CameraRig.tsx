@@ -16,8 +16,8 @@ export const CAMERA_PRESETS: Record<
 > = {
   hero: {
     label: 'Showroom',
-    position: [0.35, 1.52, 3.35],
-    target: [0.18, 1.16, -0.05],
+    position: [0.35, 1.44, 3.55],
+    target: [0.18, 1.18, -0.05],
   },
   objects: {
     label: '3D Objects',

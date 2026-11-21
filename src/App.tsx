@@ -677,7 +677,7 @@ export default function App() {
             onIngestComplete={handleIngestComplete}
             cutoutTolerance={tuning.cutoutTolerance}
             variant="floating"
-            defaultExpandedChips={true}
+            defaultExpandedChips={false}
           />
 
           {/* Top-Left Brand Identity & World Architecture Badge */}
