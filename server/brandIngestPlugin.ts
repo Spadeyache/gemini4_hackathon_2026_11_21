@@ -1,4 +1,5 @@
 import { loadEnv, type Plugin } from 'vite';
+import { GoogleGenAI } from '@google/genai';
 import type {
   GarmentAssetSet,
   LightingPreset,
@@ -1162,36 +1163,14 @@ async function trySynthesizeWithGemini(
   "heroItemIndices": [3 to 4 integer indices of the best wearable hanging upper-body garments from candidateProducts, hero centerpiece first]
 }`;
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    model
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(6500),
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${systemInstruction}\n\nScraped Brand Data:\n${JSON.stringify(promptPayload)}` }],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.35,
-      },
-    }),
+  const ai = new GoogleGenAI({ apiKey });
+  const interaction = await ai.interactions.create({
+    model,
+    system_instruction: systemInstruction,
+    input: `Scraped Brand Data:\n${JSON.stringify(promptPayload)}\n\nRespond ONLY with valid JSON matching the schema above.`,
   });
 
-  if (!res.ok) {
-    return null;
-  }
-
-  const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  const rawText = interaction.output_text;
   if (!rawText) return null;
 
   const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
@@ -1521,10 +1500,10 @@ async function handleIngestUrlRequest(
   const rawProductCount = allCandidates.length;
   const fallbackDna = synthesizeHeuristicBrandDna(targetUrl, parsedMeta, allCandidates);
 
-  // Optional Gemini 4 / Gemini 2.5 Flash Brand Architect synthesis with seamless fallback
+  // Gemini 4 Brand Architect synthesis (Interactions API) with seamless heuristic fallback
   const env = readRuntimeEnv(viteEnv);
-  const geminiKey = env.GEMINI_API_KEY?.trim();
-  const geminiModel = env.GEMINI_ARCHITECT_MODEL?.trim() || 'gemini-2.5-flash';
+  const geminiKey = (env.GEMINI_API_KEY || env.GOOGLE_API_KEY)?.trim();
+  const geminiModel = env.GEMINI_ARCHITECT_MODEL?.trim() || 'gemini-4-carbon';
 
   let usedGemini = false;
   let finalDna: SynthesizedBrandDna = fallbackDna;

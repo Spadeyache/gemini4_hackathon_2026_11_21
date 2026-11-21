@@ -9,6 +9,7 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
+    "@google/genai": "^3.6.1",
     "@react-three/drei": "^9.117.3",
     "@react-three/fiber": "^8.17.10",
     "lucide-react": "^0.460.0",
