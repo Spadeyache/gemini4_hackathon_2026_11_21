@@ -1,0 +1,428 @@
+[
+  {
+    "id": "p_glaze_swatch_zine",
+    "handle": "mybrand-kestrel-clay-glaze-swatch-zine",
+    "title": "Ash & Iron Glaze Swatch Zine",
+    "tier": "entry",
+    "kind": "physical",
+    "product_type": "Zine",
+    "zone_id": "zone_kiln",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "process",
+      "paper"
+    ],
+    "description": "A 24-page saddle-stitched booklet photographing twelve wood-ash and iron glaze tests from our studio kiln, paired with handwritten firing notes on uncoated linen paper.",
+    "blurbs": [
+      "Twelve wood-ash glaze tests straight from our cone 10 notebook.",
+      "Compact 24-page field guide to clay bodies, ash ratios, and kiln moods."
+    ],
+    "price": "18.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Edition",
+        "values": ["First Printing"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Edition": "First Printing" },
+        "price": "18.00",
+        "sku": "KC-ZINE-01"
+      }
+    ],
+    "image_asset_ids": ["asset_p_glaze_swatch_zine"],
+    "evidence": ["img_02: studio glaze test tiles laid out on pine board"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_throwing_notes_pdf",
+    "handle": "mybrand-kestrel-clay-throwing-notes-pdf",
+    "title": "Cone 10 Throwing & Trimming Notes",
+    "tier": "core",
+    "kind": "digital",
+    "product_type": "Digital Guide",
+    "zone_id": "zone_kiln",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "process",
+      "guide"
+    ],
+    "description": "A downloadable 48-page studio manual detailing wall thickness charts, foot-ring profiles, and slow cooling curves used across Kestrel & Clay vessels.",
+    "blurbs": [
+      "My bench measurements for balanced rims, crisp foot rings, and clean pours.",
+      "Instant PDF download with printable wall-thickness templates and kiln logs."
+    ],
+    "price": "32.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Format",
+        "values": ["PDF Manual"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Format": "PDF Manual" },
+        "price": "32.00",
+        "sku": "KC-PDF-01"
+      }
+    ],
+    "image_asset_ids": ["asset_p_throwing_notes_pdf"],
+    "evidence": ["voice_1: shares kiln unloading temperatures and glaze notes openly"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_kiln_firing_workshop",
+    "handle": "mybrand-kestrel-clay-kiln-firing-workshop",
+    "title": "Weekend Kiln Loading & Glaze Session",
+    "tier": "signature",
+    "kind": "service",
+    "product_type": "Workshop",
+    "zone_id": "zone_kiln",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "process",
+      "studio"
+    ],
+    "description": "Spend a small-group afternoon glazing three bisque-fired pieces in studio wood ash, stacking the reduction kiln together, and reviewing test draw-rings.",
+    "blurbs": [
+      "Glaze three stoneware forms beside me and learn how placement shapes the finish.",
+      "Includes three bisque vessels, ash glazes, and finished firing pickup."
+    ],
+    "price": "190.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Session",
+        "values": ["Autumn Firing", "Winter Firing"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Session": "Autumn Firing" },
+        "price": "190.00",
+        "sku": "KC-WKS-AUT"
+      },
+      {
+        "options": { "Session": "Winter Firing" },
+        "price": "190.00",
+        "sku": "KC-WKS-WIN"
+      }
+    ],
+    "image_asset_ids": ["asset_p_kiln_firing_workshop"],
+    "evidence": ["voice_2: invites collectors into studio glaze choices"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_espresso_cup",
+    "handle": "mybrand-kestrel-clay-espresso-cup",
+    "title": "Speckled Stoneware Espresso Cup",
+    "tier": "entry",
+    "kind": "physical",
+    "product_type": "Drinkware",
+    "zone_id": "zone_table",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "coffee",
+      "stoneware"
+    ],
+    "description": "A four-ounce handless espresso tumbler wheel-thrown from warm iron-speckled clay, dipped in satin oat ash glaze with a raw unglazed foot.",
+    "blurbs": [
+      "Pulled from cone 10 reduction with warm iron speckles along every rim.",
+      "Four-ounce stoneware cup that holds heat well past the last sip."
+    ],
+    "price": "26.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Glaze",
+        "values": ["Oat Ash", "Charred Basalt"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Glaze": "Oat Ash" },
+        "price": "26.00",
+        "sku": "KC-ESP-OAT"
+      },
+      {
+        "options": { "Glaze": "Charred Basalt" },
+        "price": "26.00",
+        "sku": "KC-ESP-BAS"
+      }
+    ],
+    "image_asset_ids": ["asset_p_espresso_cup"],
+    "evidence": ["img_01: stoneware espresso cups cooling on oak table"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_ash_glaze_dripper",
+    "handle": "mybrand-kestrel-clay-ash-glaze-dripper",
+    "title": "Fluted Ash-Glaze Pour-Over Dripper",
+    "tier": "core",
+    "kind": "physical",
+    "product_type": "Coffee Brewer",
+    "zone_id": "zone_table",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "coffee",
+      "stoneware"
+    ],
+    "description": "Wheel-thrown cone-02 stoneware dripper with hand-carved interior ribs for steady airflow and a wide base flange that sits cleanly on mugs or carafes.",
+    "blurbs": [
+      "Hand-carved inner flutes inspired by carved studio grid lines.",
+      "Fits standard #02 paper filters and retains brewing heat without preheating fuss."
+    ],
+    "price": "54.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Glaze",
+        "values": ["Warm Terracotta", "Moss Ash"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Glaze": "Warm Terracotta" },
+        "price": "54.00",
+        "sku": "KC-DRP-TER"
+      },
+      {
+        "options": { "Glaze": "Moss Ash" },
+        "price": "54.00",
+        "sku": "KC-DRP-MOS"
+      }
+    ],
+    "image_asset_ids": ["asset_p_ash_glaze_dripper"],
+    "evidence": ["img_03: fluted stoneware pour-over brewer on studio counter"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_tableware_commission",
+    "handle": "mybrand-kestrel-clay-tableware-commission",
+    "title": "Bespoke Four-Piece Coffee Table Set",
+    "tier": "signature",
+    "kind": "service",
+    "product_type": "Commission",
+    "zone_id": "zone_table",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "coffee",
+      "bespoke"
+    ],
+    "description": "A made-to-order morning set: two mugs, one pour-over dripper, and one matching carafe, glazed in your choice of three studio ash finishes and thrown together in one firing.",
+    "blurbs": [
+      "Thrown as a single family from one wedge of speckled clay and fired side by side.",
+      "Includes a 20-minute glaze selection call and signed firing log card."
+    ],
+    "price": "340.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Finish",
+        "values": ["Oat Ash", "Moss Ash", "Charred Basalt"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Finish": "Oat Ash" },
+        "price": "340.00",
+        "sku": "KC-SET-OAT"
+      },
+      {
+        "options": { "Finish": "Moss Ash" },
+        "price": "340.00",
+        "sku": "KC-SET-MOS"
+      },
+      {
+        "options": { "Finish": "Charred Basalt" },
+        "price": "340.00",
+        "sku": "KC-SET-BAS"
+      }
+    ],
+    "image_asset_ids": ["asset_p_tableware_commission"],
+    "evidence": ["voice_2: collaborates directly with collectors on glaze choices"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_kiln_postcard_set",
+    "handle": "mybrand-kestrel-clay-kiln-postcard-set",
+    "title": "Kiln Shelf Study Postcard Folio",
+    "tier": "entry",
+    "kind": "physical",
+    "product_type": "Print Set",
+    "zone_id": "zone_gallery",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "prints",
+      "paper"
+    ],
+    "description": "Six letterpress-textured postcards reproducing studio woodblock rubbings of kiln drip rings and cone marks, wrapped in a stamped linen belly band.",
+    "blurbs": [
+      "Six tactile studies of wood-ash rings left behind on the kiln shelf.",
+      "Frameable A6 cards printed on heavy 300 gsm cotton rag stock."
+    ],
+    "price": "16.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Pack",
+        "values": ["Set of 6"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Pack": "Set of 6" },
+        "price": "16.00",
+        "sku": "KC-CRD-06"
+      }
+    ],
+    "image_asset_ids": ["asset_p_kiln_postcard_set"],
+    "evidence": ["img_05: ink rubbings of kiln shelf rings"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_woodblock_kiln_print",
+    "handle": "mybrand-kestrel-clay-woodblock-kiln-print",
+    "title": "Numbered Woodblock Kiln Grid Print",
+    "tier": "core",
+    "kind": "physical",
+    "product_type": "Art Print",
+    "zone_id": "zone_gallery",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "prints",
+      "wall"
+    ],
+    "description": "Hand-burnished two-block woodcut printed with iron oxide and soot ink onto Japanese kozo paper, mapping the stacked geometry of a freshly unloaded reduction kiln.",
+    "blurbs": [
+      "Carved in birch and burnished by hand with iron-oxide studio ink.",
+      "Signed A3 edition on deckle-edge kozo paper, ready for standard framing."
+    ],
+    "price": "78.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Size",
+        "values": ["A3 Unframed", "A2 Unframed"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Size": "A3 Unframed" },
+        "price": "78.00",
+        "sku": "KC-PRT-A3"
+      },
+      {
+        "options": { "Size": "A2 Unframed" },
+        "price": "112.00",
+        "sku": "KC-PRT-A2"
+      }
+    ],
+    "image_asset_ids": ["asset_p_woodblock_kiln_print"],
+    "evidence": ["img_05: hand-carved grid woodblock proof on studio wall"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  },
+  {
+    "id": "p_basalt_vessel",
+    "handle": "mybrand-kestrel-clay-basalt-vessel",
+    "title": "Reduction-Fired Basalt Neck Vessel",
+    "tier": "signature",
+    "kind": "physical",
+    "product_type": "Sculptural Vessel",
+    "zone_id": "zone_gallery",
+    "tags": [
+      "mybrand",
+      "mybrand:kestrel-clay",
+      "boot:demo-brand",
+      "stoneware",
+      "sculptural"
+    ],
+    "description": "A tall hand-coiled and wheel-finished sculptural vessel made from iron-rich black stoneware, finished with a natural collar of melted birch ash.",
+    "blurbs": [
+      "One-off blackened basalt form with a natural melted birch-ash shoulder.",
+      "Stands 28 cm tall with sealed interior suitable for dry branches or water."
+    ],
+    "price": "220.00",
+    "currency": "USD",
+    "options": [
+      {
+        "name": "Piece",
+        "values": ["Studio Study #04"]
+      }
+    ],
+    "variants": [
+      {
+        "options": { "Piece": "Studio Study #04" },
+        "price": "220.00",
+        "sku": "KC-VSL-04"
+      }
+    ],
+    "image_asset_ids": ["asset_p_basalt_vessel"],
+    "evidence": ["img_04: dark sculptural vessel photographed on oak plinth"],
+    "shopify": {
+      "product_id": null,
+      "variant_ids": {},
+      "status": "DRAFT",
+      "checkout_url": null
+    }
+  }
+]

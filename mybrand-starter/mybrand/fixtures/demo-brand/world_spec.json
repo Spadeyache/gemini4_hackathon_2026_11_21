@@ -1,0 +1,240 @@
+{
+  "boot_id": "demo-brand",
+  "version": 1,
+  "room": {
+    "size_m": [16, 12, 4],
+    "floor_asset": "asset_floor_terracotta",
+    "wall_asset": "asset_wall_linen"
+  },
+  "entrance": {
+    "position": [0, 0],
+    "greeting": "Welcome to Kestrel & Clay — fresh from the cone 10 kiln."
+  },
+  "hero_plinth": {
+    "position": [0, 3],
+    "product_id": "p_glaze_swatch_zine"
+  },
+  "guide_path": {
+    "target_zone": "zone_kiln"
+  },
+  "host_note": "Start at the glaze bench, or follow the floor path toward the coffee table.",
+  "zones": [
+    {
+      "id": "zone_kiln",
+      "beat": "From raw clay, wood ash, and firing logs to finished stoneware",
+      "center": [-5, 6],
+      "size": [5, 5],
+      "lighting": "studio_daylight",
+      "signage": "Kiln Bench — clay, ash & firing notes",
+      "fixtures": [
+        {
+          "id": "f_kiln_shelf",
+          "type": "wall_shelf",
+          "position": [-7.2, 0, 6],
+          "rotation_deg": 90,
+          "slot_ids": ["s_kiln_1", "s_kiln_2"]
+        },
+        {
+          "id": "f_kiln_poster",
+          "type": "poster_frame",
+          "position": [-7.4, 1.8, 4.2],
+          "rotation_deg": 90,
+          "slot_ids": []
+        }
+      ],
+      "slots": [
+        { "id": "s_kiln_1", "product_id": "p_glaze_swatch_zine" },
+        { "id": "s_kiln_2", "product_id": "p_throwing_notes_pdf" }
+      ]
+    },
+    {
+      "id": "zone_table",
+      "beat": "Daily coffee and table rituals shaped on the wheel",
+      "center": [0, 9],
+      "size": [5, 4],
+      "lighting": "warm_clay",
+      "signage": "Daily Table — morning stoneware rituals",
+      "fixtures": [
+        {
+          "id": "f_table_display",
+          "type": "table",
+          "position": [0, 0, 9.2],
+          "rotation_deg": 0,
+          "slot_ids": ["s_table_1", "s_table_2"]
+        },
+        {
+          "id": "f_table_screen",
+          "type": "screen",
+          "position": [0, 1.6, 11.4],
+          "rotation_deg": 180,
+          "slot_ids": []
+        }
+      ],
+      "slots": [
+        { "id": "s_table_1", "product_id": "p_espresso_cup" },
+        { "id": "s_table_2", "product_id": "p_ash_glaze_dripper" }
+      ]
+    },
+    {
+      "id": "zone_gallery",
+      "beat": "Numbered woodblock kiln prints and one-off basalt vessels",
+      "center": [5, 6],
+      "size": [5, 5],
+      "lighting": "warm_clay",
+      "signage": "Edition Wall — prints & basalt vessels",
+      "fixtures": [
+        {
+          "id": "f_gallery_case",
+          "type": "display_case",
+          "position": [6.6, 0, 5.2],
+          "rotation_deg": 270,
+          "slot_ids": ["s_gallery_1"]
+        },
+        {
+          "id": "f_gallery_plinth",
+          "type": "plinth",
+          "position": [5.2, 0, 7.4],
+          "rotation_deg": 225,
+          "slot_ids": ["s_gallery_2"]
+        }
+      ],
+      "slots": [
+        { "id": "s_gallery_1", "product_id": "p_kiln_postcard_set" },
+        { "id": "s_gallery_2", "product_id": "p_basalt_vessel" }
+      ]
+    }
+  ],
+  "blurbs": {
+    "p_glaze_swatch_zine": 0,
+    "p_throwing_notes_pdf": 0,
+    "p_kiln_firing_workshop": 0,
+    "p_espresso_cup": 0,
+    "p_ash_glaze_dripper": 0,
+    "p_tableware_commission": 0,
+    "p_kiln_postcard_set": 0,
+    "p_woodblock_kiln_print": 0,
+    "p_basalt_vessel": 0
+  },
+  "assets": [
+    {
+      "id": "asset_floor_terracotta",
+      "kind": "texture",
+      "model": "fixture-palette",
+      "prompt": "Flat warm clay floor palette swatch",
+      "url": "/fixtures/demo-brand/assets/floor_terracotta.svg"
+    },
+    {
+      "id": "asset_wall_linen",
+      "kind": "texture",
+      "model": "fixture-palette",
+      "prompt": "Flat raw linen plaster wall palette swatch",
+      "url": "/fixtures/demo-brand/assets/wall_linen.svg"
+    },
+    {
+      "id": "asset_logo_kestrel",
+      "kind": "logo",
+      "model": "fixture-palette",
+      "prompt": "Minimal Kestrel & Clay studio mark",
+      "url": "/fixtures/demo-brand/assets/logo_kestrel.svg"
+    },
+    {
+      "id": "asset_p_glaze_swatch_zine",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Ash & Iron Glaze Swatch Zine palette tile",
+      "url": "/fixtures/demo-brand/assets/p_glaze_swatch_zine.svg"
+    },
+    {
+      "id": "asset_p_throwing_notes_pdf",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Cone 10 Throwing & Trimming Notes palette tile",
+      "url": "/fixtures/demo-brand/assets/p_throwing_notes_pdf.svg"
+    },
+    {
+      "id": "asset_p_kiln_firing_workshop",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Weekend Kiln Loading & Glaze Session palette tile",
+      "url": "/fixtures/demo-brand/assets/p_kiln_firing_workshop.svg"
+    },
+    {
+      "id": "asset_p_espresso_cup",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Speckled Stoneware Espresso Cup palette tile",
+      "url": "/fixtures/demo-brand/assets/p_espresso_cup.svg"
+    },
+    {
+      "id": "asset_p_ash_glaze_dripper",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Fluted Ash-Glaze Pour-Over Dripper palette tile",
+      "url": "/fixtures/demo-brand/assets/p_ash_glaze_dripper.svg"
+    },
+    {
+      "id": "asset_p_tableware_commission",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Bespoke Four-Piece Coffee Table Set palette tile",
+      "url": "/fixtures/demo-brand/assets/p_tableware_commission.svg"
+    },
+    {
+      "id": "asset_p_kiln_postcard_set",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Kiln Shelf Study Postcard Folio palette tile",
+      "url": "/fixtures/demo-brand/assets/p_kiln_postcard_set.svg"
+    },
+    {
+      "id": "asset_p_woodblock_kiln_print",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Numbered Woodblock Kiln Grid Print palette tile",
+      "url": "/fixtures/demo-brand/assets/p_woodblock_kiln_print.svg"
+    },
+    {
+      "id": "asset_p_basalt_vessel",
+      "kind": "product_image",
+      "model": "fixture-palette",
+      "prompt": "Reduction-Fired Basalt Neck Vessel palette tile",
+      "url": "/fixtures/demo-brand/assets/p_basalt_vessel.svg"
+    }
+  ],
+  "variant_pools": {
+    "lighting": [
+      {
+        "id": "warm_clay",
+        "color_temp_k": 3000,
+        "intensity": 0.85,
+        "spot": false
+      },
+      {
+        "id": "studio_daylight",
+        "color_temp_k": 4600,
+        "intensity": 0.95,
+        "spot": false
+      },
+      {
+        "id": "gallery_spot",
+        "color_temp_k": 2700,
+        "intensity": 0.72,
+        "spot": true
+      }
+    ],
+    "signage": {
+      "zone_kiln": [
+        "Kiln Bench — clay, ash & firing notes",
+        "Inside Cone 10 — raw glaze studies & studio guides"
+      ],
+      "zone_table": [
+        "Daily Table — morning stoneware rituals",
+        "Built for Morning Coffee — wheel-thrown to hold heat"
+      ],
+      "zone_gallery": [
+        "Edition Wall — prints & basalt vessels",
+        "Quiet Editions — numbered woodblocks & solo vessels"
+      ]
+    }
+  }
+}

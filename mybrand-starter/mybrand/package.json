@@ -1,0 +1,21 @@
+{
+  "name": "mybrand",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c cyan,magenta \"npm run dev --workspace=@mybrand/server\" \"npm run dev --workspace=@mybrand/client\"",
+    "typecheck": "npm run typecheck --workspace=@mybrand/shared && npm run typecheck --workspace=@mybrand/server && npm run typecheck --workspace=@mybrand/client",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

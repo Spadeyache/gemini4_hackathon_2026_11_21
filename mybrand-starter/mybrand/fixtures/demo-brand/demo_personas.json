@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Morning Coffee Ritualist",
+    "segment": "seg_daily",
+    "events": [
+      { "t": 0, "type": "enter_zone", "zone": "zone_kiln" },
+      { "t": 2, "type": "exit_zone", "zone": "zone_kiln", "ms": 2000 },
+      { "t": 4, "type": "enter_zone", "zone": "zone_table" },
+      { "t": 8, "type": "look", "zone": "zone_table", "product_id": "p_ash_glaze_dripper", "ms": 3400 },
+      { "t": 13, "type": "inspect", "zone": "zone_table", "product_id": "p_ash_glaze_dripper" },
+      { "t": 20, "type": "look", "zone": "zone_table", "product_id": "p_espresso_cup", "ms": 2200 },
+      { "t": 24, "type": "inspect", "zone": "zone_table", "product_id": "p_espresso_cup" },
+      { "t": 31, "type": "add_to_cart", "zone": "zone_table", "product_id": "p_espresso_cup" },
+      { "t": 45, "type": "look", "zone": "zone_table", "product_id": "p_tableware_commission", "ms": 3000 },
+      { "t": 54, "type": "inspect", "zone": "zone_table", "product_id": "p_tableware_commission" }
+    ],
+    "expected": [
+      "guide_path shifts to zone_table after quick exit from zone_kiln",
+      "p_ash_glaze_dripper blurb flips to index 1 (practical brewing fit)",
+      "zone_table slot s_table_1 promotes p_tableware_commission and hero_plinth shows coffee complement by ~35 s"
+    ]
+  },
+  {
+    "name": "Collector & Print Seeker",
+    "segment": "seg_collector",
+    "events": [
+      { "t": 0, "type": "enter_zone", "zone": "zone_kiln" },
+      { "t": 5, "type": "look", "zone": "zone_kiln", "product_id": "p_glaze_swatch_zine", "ms": 1800 },
+      { "t": 8, "type": "exit_zone", "zone": "zone_kiln", "ms": 8000 },
+      { "t": 11, "type": "enter_zone", "zone": "zone_gallery" },
+      { "t": 16, "type": "look", "zone": "zone_gallery", "product_id": "p_kiln_postcard_set", "ms": 2600 },
+      { "t": 20, "type": "inspect", "zone": "zone_gallery", "product_id": "p_kiln_postcard_set" },
+      { "t": 28, "type": "look", "zone": "zone_gallery", "product_id": "p_basalt_vessel", "ms": 3200 },
+      { "t": 34, "type": "inspect", "zone": "zone_gallery", "product_id": "p_kiln_postcard_set" },
+      { "t": 44, "type": "look", "zone": "zone_gallery", "product_id": "p_woodblock_kiln_print", "ms": 3500 },
+      { "t": 52, "type": "inspect", "zone": "zone_gallery", "product_id": "p_woodblock_kiln_print" }
+    ],
+    "expected": [
+      "zone_gallery lighting shifts to gallery_spot after 10 s dwell",
+      "zone_gallery slot s_gallery_1 promotes p_woodblock_kiln_print after 2 print inspects",
+      "host_note and gallery signage speak to numbered prints and solo vessels"
+    ]
+  }
+]
