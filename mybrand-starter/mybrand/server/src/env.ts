@@ -2,9 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
+export type SessionAdapterMode = "full" | "rules_plus_host_note" | "rules_only";
+
 export interface ServerEnv {
   port: number;
   geminiApiKey?: string;
+  sessionAdapterMode: SessionAdapterMode;
   shopifyDomain?: string;
   shopifyClientId?: string;
   shopifyClientSecret?: string;
@@ -18,6 +21,27 @@ function nonEmpty(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/**
+ * Default adapter mode: live 20-call gemini-4-hydrogen benchmark measured
+ * p50=4885ms / p95=6914ms (> 2500ms deadline), so per BUILD_PLAN.md M2,
+ * rules drive immediate changes and Hydrogen writes /host_note by default.
+ * Override with SESSION_ADAPTER_MODE=full or SESSION_ADAPTER_MODE=rules_only.
+ */
+export const DEFAULT_SESSION_ADAPTER_MODE: SessionAdapterMode =
+  "rules_plus_host_note";
+
+function parseAdapterMode(value: string | undefined): SessionAdapterMode {
+  const normalized = nonEmpty(value)?.toLowerCase();
+  if (
+    normalized === "full" ||
+    normalized === "rules_plus_host_note" ||
+    normalized === "rules_only"
+  ) {
+    return normalized;
+  }
+  return DEFAULT_SESSION_ADAPTER_MODE;
 }
 
 export function parseServerEnv(
@@ -40,6 +64,7 @@ export function parseServerEnv(
   return {
     port,
     geminiApiKey,
+    sessionAdapterMode: parseAdapterMode(raw.SESSION_ADAPTER_MODE),
     shopifyDomain: nonEmpty(raw.SHOPIFY_DOMAIN),
     shopifyClientId: nonEmpty(raw.SHOPIFY_CLIENT_ID),
     shopifyClientSecret: nonEmpty(raw.SHOPIFY_CLIENT_SECRET),

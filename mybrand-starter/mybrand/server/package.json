@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "bench:hydrogen": "tsx src/scripts/benchmark-hydrogen.ts"
   },
   "dependencies": {
     "@google/genai": "^1.0.0",
