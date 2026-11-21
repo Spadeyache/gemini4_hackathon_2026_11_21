@@ -162,6 +162,32 @@ export async function postSessionEvents(
   return EventsAckResponseSchema.parse(raw);
 }
 
+export interface TriggerAdaptResponse {
+  ok: boolean;
+  applied: number;
+  source?: "model" | "rules";
+  latency_ms?: number;
+  visitor_read?: string;
+}
+
+export async function triggerSessionAdapt(
+  sessionId: string
+): Promise<TriggerAdaptResponse> {
+  const res = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/adapt`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Adapt trigger failed (HTTP ${res.status})`);
+  }
+
+  return (await res.json()) as TriggerAdaptResponse;
+}
+
 export function parseSseFrame(rawData: string): SseStreamFrame | null {
   let decoded: unknown;
   try {

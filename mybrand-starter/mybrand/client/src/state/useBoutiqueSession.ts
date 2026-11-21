@@ -12,6 +12,7 @@ import {
   fetchBootBundle,
   postSessionEvents,
   subscribeSessionStream,
+  triggerSessionAdapt,
   type BootBundle,
   type SseOpsPayload,
 } from "../api/boutiqueApi";
@@ -47,6 +48,7 @@ export interface BoutiqueSessionHandle {
   opLog: AppliedOpRecord[];
   recentEvents: BoutiqueEvent[];
   bagProductIds: Set<string>;
+  isAdapting: boolean;
   assetUrlById: Map<string, string>;
   productById: Map<string, Product>;
   emitEvent: (input: EmitEventInput, flushImmediately?: boolean) => void;
@@ -61,6 +63,7 @@ export interface BoutiqueSessionHandle {
     }
   ) => ApplyOpsResult | null;
   toggleBagItem: (product: Product, zoneId?: string) => boolean;
+  adaptNow: () => Promise<void>;
   getElapsedSeconds: () => number;
 }
 
@@ -77,10 +80,13 @@ export function useBoutiqueSession(bootId: string): BoutiqueSessionHandle {
   const [opLog, setOpLog] = useState<AppliedOpRecord[]>([]);
   const [recentEvents, setRecentEvents] = useState<BoutiqueEvent[]>([]);
   const [bagProductIds, setBagProductIds] = useState<Set<string>>(() => new Set());
+  const [isAdapting, setIsAdapting] = useState(false);
 
   const sessionStartRef = useRef<number>(performance.now());
   const sessionStateRef = useRef<SessionState>({});
   const bootRef = useRef<BootBundle | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const isAdaptingRef = useRef(false);
   const batcherRef = useRef<EventBatcher | null>(null);
   const bagProductIdsRef = useRef<Set<string>>(new Set());
 
@@ -198,6 +204,7 @@ export function useBoutiqueSession(bootId: string): BoutiqueSessionHandle {
           );
           sessionStateRef.current = serverState;
           setSessionState(serverState);
+          sessionIdRef.current = created.sessionId;
           setSessionId(created.sessionId);
           setSessionMode("live");
 
@@ -239,6 +246,7 @@ export function useBoutiqueSession(bootId: string): BoutiqueSessionHandle {
         } catch {
           if (!active) return;
           // Graceful fallback when M2 session loop endpoint is not running yet
+          sessionIdRef.current = null;
           setSessionId(null);
           setSessionMode("local-fallback");
           setStreamStatus("offline");
@@ -332,6 +340,26 @@ export function useBoutiqueSession(bootId: string): BoutiqueSessionHandle {
     return map;
   }, [boot]);
 
+  const adaptNow = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (!sid || isAdaptingRef.current) return;
+
+    isAdaptingRef.current = true;
+    setIsAdapting(true);
+    try {
+      // Flush any buffered clicks/looks before calling Gemini 4 Hydrogen
+      if (batcherRef.current) {
+        await batcherRef.current.flush();
+      }
+      await triggerSessionAdapt(sid);
+    } catch {
+      // Ignore transient demo trigger failure cleanly
+    } finally {
+      isAdaptingRef.current = false;
+      setIsAdapting(false);
+    }
+  }, []);
+
   return {
     loading,
     error,
@@ -345,11 +373,13 @@ export function useBoutiqueSession(bootId: string): BoutiqueSessionHandle {
     opLog,
     recentEvents,
     bagProductIds,
+    isAdapting,
     assetUrlById,
     productById,
     emitEvent,
     applyOps,
     toggleBagItem,
+    adaptNow,
     getElapsedSeconds,
   };
 }

@@ -16,6 +16,8 @@ interface CrosshairHudProps {
   bagCount: number;
   sessionMode: SessionMode;
   streamStatus: StreamStatus;
+  isAdapting: boolean;
+  onAdaptNow: () => void;
   onChangeCameraMode: (mode: CameraMode) => void;
   onFocusZone: (zoneId: string | null) => void;
   onToggleDevOverlay: () => void;
@@ -45,6 +47,8 @@ export function CrosshairHud({
   bagCount,
   sessionMode,
   streamStatus,
+  isAdapting,
+  onAdaptNow,
   onChangeCameraMode,
   onFocusZone,
   onToggleDevOverlay,
@@ -143,6 +147,17 @@ export function CrosshairHud({
                 : "Connecting"
               : "Local"}
           </span>
+          {sessionMode === "live" && (
+            <button
+              type="button"
+              className={`hud-adapt-btn ${isAdapting ? "adapting" : ""}`}
+              onClick={onAdaptNow}
+              disabled={isAdapting}
+              title="Update boutique now based on your recent selections using Gemini 4 Hydrogen (Ctrl+U)"
+            >
+              {isAdapting ? "✦ Adapting…" : "✦ Adapt [Ctrl+U]"}
+            </button>
+          )}
           <button
             type="button"
             className={`hud-dev-toggle ${devOverlayOpen ? "active" : ""}`}
@@ -281,8 +296,9 @@ export function CrosshairHud({
             ))}
           </nav>
           <div className="hud-diorama-hint">
-            Drag to orbit · Scroll to zoom · Click any piece to inspect · Click
-            a zone to explore · <strong>V</strong> walk · <strong>O</strong> dev
+            Drag to orbit · Scroll to zoom · Click any piece to inspect ·{" "}
+            <strong>Ctrl+U</strong> adapt now · <strong>V</strong> walk ·{" "}
+            <strong>O</strong> dev
           </div>
         </div>
       )}

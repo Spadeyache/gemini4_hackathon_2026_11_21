@@ -331,6 +331,36 @@ export function createApp(options: AppOptions = {}): Express {
     res.status(200).json({ ok: true, accepted: result.accepted });
   });
 
+  app.post("/api/sessions/:id/adapt", async (req, res) => {
+    const { id } = req.params;
+    if (!sessionManager.getSession(id)) {
+      res.status(404).json({ error: `Session '${id}' not found` });
+      return;
+    }
+
+    try {
+      const payload = await sessionManager.forceAdaptNow(id);
+      if (!payload) {
+        res.status(200).json({ ok: true, applied: 0, ops: [] });
+        return;
+      }
+      res.status(200).json({
+        ok: true,
+        applied: payload.ops.length,
+        ops: payload.ops,
+        source: payload.source,
+        latency_ms: payload.latency_ms,
+        visitor_read: payload.visitor_read,
+        confidence: payload.confidence,
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: "Failed to run immediate adaptation",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   app.get("/api/sessions/:id/stream", (req, res) => {
     const { id } = req.params;
     const attached = sessionManager.attachStream(id, req, res);

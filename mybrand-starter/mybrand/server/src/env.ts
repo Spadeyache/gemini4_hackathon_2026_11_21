@@ -2,7 +2,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 
-export type SessionAdapterMode = "full" | "rules_plus_host_note" | "rules_only";
+export type SessionAdapterMode =
+  | "hybrid"
+  | "full"
+  | "rules_plus_host_note"
+  | "rules_only";
 
 export interface ServerEnv {
   port: number;
@@ -24,17 +28,17 @@ function nonEmpty(value: string | undefined): string | undefined {
 }
 
 /**
- * Default adapter mode: live 20-call gemini-4-hydrogen benchmark measured
- * p50=4885ms / p95=6914ms (> 2500ms deadline), so per BUILD_PLAN.md M2,
- * rules drive immediate changes and Hydrogen writes /host_note by default.
- * Override with SESSION_ADAPTER_MODE=full or SESSION_ADAPTER_MODE=rules_only.
+ * Default adapter mode: "hybrid" combines instant (~1ms) policy rules with live
+ * gemini-4-hydrogen multi-op thematic product/signage/lighting/host_note adaptation
+ * (respecting all §5 levers, validator limits, and graceful offline rules fallback).
+ * Override via SESSION_ADAPTER_MODE=full | rules_plus_host_note | rules_only.
  */
-export const DEFAULT_SESSION_ADAPTER_MODE: SessionAdapterMode =
-  "rules_plus_host_note";
+export const DEFAULT_SESSION_ADAPTER_MODE: SessionAdapterMode = "hybrid";
 
 function parseAdapterMode(value: string | undefined): SessionAdapterMode {
   const normalized = nonEmpty(value)?.toLowerCase();
   if (
+    normalized === "hybrid" ||
     normalized === "full" ||
     normalized === "rules_plus_host_note" ||
     normalized === "rules_only"

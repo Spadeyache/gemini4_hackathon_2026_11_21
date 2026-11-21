@@ -491,3 +491,114 @@ export function evaluateRules(ctx: RuleEvalContext): RuleMatchResult | null {
 
   return null;
 }
+
+export interface ThematicFallbackResult {
+  ops: Op[];
+  visitor_read: string;
+  confidence: number;
+}
+
+/**
+ * Deterministic theme-matching fallback used when gemini-4-hydrogen is unavailable
+ * and no hardcoded policy rule fired yet: promotes another catalog product sharing
+ * the visitor's most recently selected product's thematic tags.
+ */
+export function evaluateThematicFallback(
+  ctx: RuleEvalContext,
+  options?: { skipTimingGates?: boolean }
+): ThematicFallbackResult | null {
+  const recent = ctx.signals.recent_events;
+  let selectedId: string | null = null;
+  for (let i = recent.length - 1; i >= 0; i--) {
+    const ev = recent[i];
+    if (ev && (ev.type === "add_to_cart" || ev.type === "inspect") && ev.product_id) {
+      selectedId = ev.product_id;
+      break;
+    }
+  }
+  if (!selectedId) return null;
+
+  const selected = ctx.config.catalog.find((p) => p.id === selectedId);
+  if (!selected) return null;
+
+  const isThematic = (t: string) => {
+    const lower = t.toLowerCase();
+    return lower !== "mybrand" && !lower.startsWith("mybrand:") && !lower.startsWith("boot:");
+  };
+  const targetTags = new Set(selected.tags.filter(isThematic).map((t) => t.toLowerCase()));
+  if (targetTags.size === 0) return null;
+
+  const featuredIds = new Set<string>();
+  for (const [k, v] of Object.entries(ctx.state)) {
+    if (
+      typeof v === "string" &&
+      (k === "/hero_plinth/product_id" || /^\/zones\/[^/]+\/slots\/[^/]+\/product_id$/.test(k))
+    ) {
+      featuredIds.add(v);
+    }
+  }
+
+  const scored = ctx.config.catalog
+    .filter((p) => p.id !== selected.id)
+    .map((item) => {
+      const shared = item.tags
+        .filter(isThematic)
+        .filter((t) => targetTags.has(t.toLowerCase()));
+      if (shared.length === 0) return null;
+      const unfeaturedBoost = featuredIds.has(item.id) ? 0 : 10;
+      const sameZoneBoost = item.zone_id === selected.zone_id ? 3 : 0;
+      return {
+        item,
+        primaryTag: shared[0]!,
+        score: unfeaturedBoost + shared.length * 4 + sameZoneBoost,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length === 0) return null;
+
+  const best = scored[0]!;
+  const candidates: Op[] = [];
+
+  // Promote matching-theme piece onto hero plinth if not already featured there
+  if (ctx.state["/hero_plinth/product_id"] !== best.item.id) {
+    candidates.push({
+      op: "replace",
+      path: "/hero_plinth/product_id",
+      value: best.item.id,
+      reason: `selected ${best.primaryTag} piece; spotlighting matching ${best.item.title}`,
+    });
+  }
+
+  // Guide visitor toward the matching-theme zone if different from current guide target
+  if (ctx.state["/guide_path/target_zone"] !== best.item.zone_id) {
+    candidates.push({
+      op: "replace",
+      path: "/guide_path/target_zone",
+      value: best.item.zone_id,
+      reason: `guiding toward more ${best.primaryTag} pieces`,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  const validated = validateOps(candidates, {
+    config: ctx.config,
+    state: ctx.state,
+    signals: ctx.signals,
+    now_s: ctx.now_s,
+    appliedCount: ctx.applied.length,
+    lastChangeAtS: ctx.lastChangeAtS,
+    leverLastChangedAtS: ctx.leverLastChangedAtS,
+    skipTimingGates: options?.skipTimingGates,
+  });
+
+  if (validated.accepted.length === 0) return null;
+
+  return {
+    ops: validated.accepted,
+    visitor_read: `exploring ${best.primaryTag} pieces`,
+    confidence: 0.72,
+  };
+}

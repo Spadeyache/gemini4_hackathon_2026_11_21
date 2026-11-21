@@ -255,6 +255,59 @@ describe("SessionManager & Hydrogen runtime integration", () => {
     ).toBe("p_glaze_swatch_zine");
   });
 
+  it("supports hybrid mode (live gemini-4-hydrogen swaps matching-theme products across levers even without a matching rule, with thematic fallback on error)", async () => {
+    let nowMs = 1_000_000;
+    const propose = vi.fn<SessionAdapterClient["propose"]>(
+      async (): Promise<AdapterCallResult> => ({
+        ok: true,
+        latency_ms: 1200,
+        output: {
+          ops: [
+            {
+              op: "replace",
+              path: "/hero_plinth/product_id",
+              value: "p_woodblock_kiln_print",
+              reason: "inspected kiln postcards; spotlight matching woodblock print",
+            },
+            {
+              op: "replace",
+              path: "/guide_path/target_zone",
+              value: "zone_gallery",
+              reason: "guide visitor toward print editions",
+            },
+            {
+              op: "replace",
+              path: "/host_note",
+              value: "Into the kiln prints? Moved our numbered woodblock edition up front.",
+              reason: "announce theme shift in host voice",
+            },
+          ],
+          visitor_read: "exploring kiln prints",
+          confidence: 0.84,
+        },
+      })
+    );
+
+    const manager = createTestManager({
+      adapterClient: { isAvailable: () => true, propose },
+      adapterMode: "hybrid",
+      clock: () => nowMs,
+    });
+    const created = await manager.createSession("demo-brand");
+    manager.ingestEvents(created!.sessionId, [
+      { t: 2, type: "enter_zone", zone: "zone_gallery" },
+      { t: 10, type: "inspect", zone: "zone_gallery", product_id: "p_kiln_postcard_set" },
+    ]);
+    nowMs += 14_000;
+
+    const emitted = await manager.tickSession(created!.sessionId);
+    expect(propose).toHaveBeenCalledTimes(1);
+    expect(emitted.some((p) => p.source === "model")).toBe(true);
+    const state = manager.getSession(created!.sessionId)?.state;
+    expect(state?.["/hero_plinth/product_id"]).toBe("p_woodblock_kiln_print");
+    expect(state?.["/guide_path/target_zone"]).toBe("zone_gallery");
+  });
+
   it("triggers immediate tick on inspect/add_to_cart only after first_change_after_s and cooldown", async () => {
     let nowMs = 1_000_000;
     const manager = createTestManager({

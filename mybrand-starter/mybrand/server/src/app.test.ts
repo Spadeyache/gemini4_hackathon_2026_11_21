@@ -247,7 +247,7 @@ describe("server env loading", () => {
       const env = loadServerEnv(emptyEnvPath, warnSpy);
       expect(env.port).toBeGreaterThan(0);
       expect(env.geminiApiKey).toBeUndefined();
-      expect(env.sessionAdapterMode).toBe("rules_plus_host_note");
+      expect(env.sessionAdapterMode).toBe("hybrid");
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0]?.[0]).toContain("GEMINI_API_KEY");
     } finally {

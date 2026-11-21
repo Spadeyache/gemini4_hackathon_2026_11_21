@@ -15,6 +15,7 @@ import {
 } from "../state/sessionState";
 import { useBoutiqueSession } from "../state/useBoutiqueSession";
 import { extractBrandPalette, resolveAssetUrl } from "../world/geometryUtils";
+import { AdaptationToast } from "./hud/AdaptationToast";
 import { CrosshairHud } from "./hud/CrosshairHud";
 import { DevOverlay } from "./hud/DevOverlay";
 import { HostNoteBubble } from "./hud/HostNoteBubble";
@@ -73,9 +74,15 @@ export function BoutiquePage({ bootId, onNavigate }: BoutiquePageProps) {
     setCameraMode(nextMode);
   }, []);
 
-  // Keyboard shortcuts: 'O' toggles Dev Overlay, 'V' toggles 2.5D View <-> Walk
+  // Keyboard shortcuts: Ctrl+U adapts immediately via Gemini 4 Hydrogen; 'O' toggles Dev Overlay; 'V' toggles 2.5D View <-> Walk
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "u") {
+        event.preventDefault();
+        void session.adaptNow();
+        return;
+      }
+
       if (isEditableElement(event.target)) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
@@ -102,7 +109,7 @@ export function BoutiquePage({ bootId, onNavigate }: BoutiquePageProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [session.adaptNow]);
 
   const handleZoneChange = useCallback(
     (nextZoneId: string | null, prevZoneId: string | null, dwellMs: number) => {
@@ -347,6 +354,10 @@ export function BoutiquePage({ bootId, onNavigate }: BoutiquePageProps) {
         bagCount={session.bagProductIds.size}
         sessionMode={session.sessionMode}
         streamStatus={session.streamStatus}
+        isAdapting={session.isAdapting}
+        onAdaptNow={() => {
+          void session.adaptNow();
+        }}
         onChangeCameraMode={handleChangeCameraMode}
         onFocusZone={handleFocusZone}
         onToggleDevOverlay={() => {
@@ -364,6 +375,13 @@ export function BoutiquePage({ bootId, onNavigate }: BoutiquePageProps) {
           }
           onNavigate("/");
         }}
+      />
+
+      <AdaptationToast
+        opLog={session.opLog}
+        visitorRead={session.visitorRead}
+        productById={session.productById}
+        worldSpec={world_spec}
       />
 
       <HostNoteBubble hostName={brand_core.host.name} note={hostNote} />

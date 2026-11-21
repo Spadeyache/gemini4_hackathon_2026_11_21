@@ -51,10 +51,12 @@ export function ProductDisplay({
     phase: "idle" | "out" | "in";
     elapsed: number;
     pendingId: string;
+    flashRemainingS: number;
   }>({
     phase: "idle",
     elapsed: 0,
     pendingId: productId,
+    flashRemainingS: 0,
   });
 
   useEffect(() => {
@@ -138,19 +140,31 @@ export function ProductDisplay({
       if (t >= 1) {
         anim.phase = "idle";
         anim.elapsed = 0;
+        anim.flashRemainingS = 2.6; // Highlight freshly adapted product for 2.6s
         animScale = 1;
         animOpacity = 1;
       }
     }
 
+    if (anim.flashRemainingS > 0) {
+      anim.flashRemainingS = Math.max(0, anim.flashRemainingS - dt);
+    }
+    const swapPulse01 =
+      anim.flashRemainingS > 0
+        ? (anim.flashRemainingS / 2.6) *
+          (0.65 + 0.35 * Math.sin(state.clock.elapsedTime * 7.5))
+        : 0;
+
     if (group) {
-      const targetHoverBoost = isTargeted ? 1.05 : 1;
+      const targetHoverBoost = isTargeted ? 1.05 : 1 + swapPulse01 * 0.045;
       const finalScale = scale * animScale * targetHoverBoost;
       group.scale.setScalar(finalScale);
-      // Gentle hover float on targeted piece
+      // Gentle hover float on targeted or freshly adapted piece
       group.position.y =
         position[1] +
-        (isTargeted ? 0.025 + Math.sin(state.clock.elapsedTime * 3.5) * 0.01 : 0);
+        (isTargeted
+          ? 0.025 + Math.sin(state.clock.elapsedTime * 3.5) * 0.01
+          : swapPulse01 * 0.04);
     }
 
     if (cardMat) {
@@ -160,7 +174,9 @@ export function ProductDisplay({
         cardMat.needsUpdate = true;
       }
       cardMat.opacity = animOpacity;
-      cardMat.emissiveIntensity = isTargeted ? 0.18 : 0.03;
+      cardMat.emissiveIntensity = isTargeted
+        ? 0.18
+        : 0.04 + swapPulse01 * 0.22;
     }
 
     if (baseMat) {
@@ -170,7 +186,9 @@ export function ProductDisplay({
         baseMat.needsUpdate = true;
       }
       baseMat.opacity = animOpacity;
-      baseMat.emissiveIntensity = isTargeted ? 0.65 : 0.1;
+      baseMat.emissiveIntensity = isTargeted
+        ? 0.65
+        : 0.14 + swapPulse01 * 0.95;
     }
   });
 
