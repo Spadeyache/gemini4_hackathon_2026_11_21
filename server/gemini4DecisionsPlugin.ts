@@ -1,6 +1,7 @@
 import { loadEnv, type Plugin } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import type { StoreConfig } from '../src/types/storeConfig';
+import { pickNextGeminiApiKey } from './geminiKeyPool';
 
 /**
  * Official Gemini 4 + Gemini Decision 1 (`@google/genai` >= 3.2.0) Vite Server Plugin
@@ -55,13 +56,7 @@ export function gemini4DecisionsVitePlugin(): Plugin {
           const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as DecisionsEvalRequest;
           const { storeConfig, personas, screenshotBase64, screenshotMimeType } = body;
 
-          const apiKey = (
-            viteEnv.GEMINI_API_KEY ||
-            process.env.GEMINI_API_KEY ||
-            viteEnv.GOOGLE_API_KEY ||
-            process.env.GOOGLE_API_KEY ||
-            ''
-          ).trim();
+          const apiKey = pickNextGeminiApiKey(viteEnv);
 
           const decisionsModel =
             viteEnv.GEMINI_DECISIONS_MODEL ||

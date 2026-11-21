@@ -1,5 +1,6 @@
 import { loadEnv, type Plugin } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { pickNextGeminiApiKey, withGeminiKeyFailover } from './geminiKeyPool';
 import type {
   GarmentAssetSet,
   InventedProductSpec,
@@ -3684,7 +3685,7 @@ async function handleIngestUrlRequest(
 
   // 3. Run Multimodal `gemini-4-neon` Visual Brand & Product Query Planner
   const env = readRuntimeEnv(viteEnv);
-  const geminiKey = (env.GEMINI_API_KEY || env.GOOGLE_API_KEY)?.trim();
+  const geminiKey = pickNextGeminiApiKey(env) || (env.GEMINI_API_KEY || env.GOOGLE_API_KEY)?.trim();
   const neonModel = env.GEMINI_VISION_MODEL?.trim() || 'gemini-4-neon';
   const decisionsModel = env.GEMINI_DECISIONS_MODEL?.trim() || 'gemini-decision-1';
   const hasValidGeminiKey = Boolean(geminiKey && !/^your_|^insert_|^placeholder/i.test(geminiKey));
@@ -3694,13 +3695,15 @@ async function handleIngestUrlRequest(
 
   if (hasValidGeminiKey && geminiKey) {
     try {
-      neonPlan = await planBrandAndQueriesWithGeminiNeon(
-        geminiKey,
-        neonModel,
-        identity,
-        downloadedInitialPhotos,
-        deterministicBlueprint,
-        heuristicCluster
+      neonPlan = await withGeminiKeyFailover(env, (activeKey) =>
+        planBrandAndQueriesWithGeminiNeon(
+          activeKey,
+          neonModel,
+          identity,
+          downloadedInitialPhotos,
+          deterministicBlueprint,
+          heuristicCluster
+        )
       );
       if (neonPlan) {
         usedNeon = true;

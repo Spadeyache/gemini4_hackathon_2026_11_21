@@ -1,5 +1,6 @@
 import { loadEnv, type Plugin } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { pickNextGeminiApiKey } from './geminiKeyPool';
 import type {
   GarmentAssetSet,
   InventedProductSpec,
@@ -1022,7 +1023,7 @@ async function handleShopifyChatRequest(
     const catalog = resolveStoreCatalogProducts(storeConfig);
 
     const env = readRuntimeEnv(viteEnv);
-    const apiKey = (env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '').trim();
+    const apiKey = pickNextGeminiApiKey(env);
     const commerceModel = (env.GEMINI_COMMERCE_MODEL || 'gemini-4-hydrogen').trim();
     const shopifyDomain = normalizeShopifyDomain(env.SHOPIFY_STORE_DOMAIN);
     const storefrontToken = (env.SHOPIFY_STOREFRONT_ACCESS_TOKEN || '').trim();

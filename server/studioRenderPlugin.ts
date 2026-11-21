@@ -4,6 +4,7 @@ import * as crypto from 'node:crypto';
 import { loadEnv, type Plugin } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import type { StorePalette } from '../src/types/storeConfig';
+import { resolveGeminiKeyPool, withGeminiKeyFailover } from './geminiKeyPool';
 
 export type StudioRenderMode = 'clean_cutout' | 'commercial_showcase';
 
@@ -584,60 +585,71 @@ async function executeStudioRender(
   }
 
   const job = (async (): Promise<StudioRenderResponse> => {
-    const ai = new GoogleGenAI({ apiKey });
     const refImage = await resolveReferenceImage(reqBody.imageUrl, projectRoot);
 
-    let extracted: { base64: string; mimeType: string } | null = null;
+    const extracted = await withGeminiKeyFailover(
+      { GEMINI_API_KEY: apiKey },
+      async (activeKey) => {
+        const ai = new GoogleGenAI({ apiKey: activeKey });
+        let out: { base64: string; mimeType: string } | null = null;
 
-    if (refImage) {
-      const studioPrompt = buildStudioPrompt(reqBody, true);
-      try {
-        // v1 Interactions API: wrap multimodal [image, text] inside user_input, never pass response_modalities
-        const r = await ai.interactions.create({
-          model: modelUsed,
-          input: [
-            {
-              type: 'user_input',
-              content: [
+        if (refImage) {
+          const studioPrompt = buildStudioPrompt(reqBody, true);
+          try {
+            // v1 Interactions API: wrap multimodal [image, text] inside user_input, never pass response_modalities
+            const r = await ai.interactions.create({
+              model: modelUsed,
+              input: [
                 {
-                  type: 'image',
-                  data: refImage.base64,
-                  mime_type: refImage.mimeType,
-                },
-                {
-                  type: 'text',
-                  text: studioPrompt,
+                  type: 'user_input',
+                  content: [
+                    {
+                      type: 'image',
+                      data: refImage.base64,
+                      mime_type: refImage.mimeType,
+                    },
+                    {
+                      type: 'text',
+                      text: studioPrompt,
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-        });
-        extracted = extractImageFromInteraction(r);
-      } catch (multimodalErr) {
-        // Fallback to text-to-image studio synthesis if upstream reference image had corrupted bytes
-        const fallbackPrompt = buildStudioPrompt(reqBody, false);
-        try {
-          const fallbackRes = await ai.interactions.create({
+            });
+            out = extractImageFromInteraction(r);
+          } catch (multimodalErr) {
+            const errMsg = multimodalErr instanceof Error ? multimodalErr.message : String(multimodalErr);
+            if (/429|quota|rate.?limit|resource_exhausted/i.test(errMsg)) {
+              throw multimodalErr;
+            }
+            // Fallback to text-to-image studio synthesis if upstream reference image had corrupted bytes
+            const fallbackPrompt = buildStudioPrompt(reqBody, false);
+            try {
+              const fallbackRes = await ai.interactions.create({
+                model: modelUsed,
+                input: fallbackPrompt,
+              });
+              out = extractImageFromInteraction(fallbackRes);
+            } catch {
+              throw multimodalErr;
+            }
+          }
+        } else {
+          const studioPrompt = buildStudioPrompt(reqBody, false);
+          const r = await ai.interactions.create({
             model: modelUsed,
-            input: fallbackPrompt,
+            input: studioPrompt,
           });
-          extracted = extractImageFromInteraction(fallbackRes);
-        } catch {
-          throw multimodalErr;
+          out = extractImageFromInteraction(r);
         }
-      }
-    } else {
-      const studioPrompt = buildStudioPrompt(reqBody, false);
-      const r = await ai.interactions.create({
-        model: modelUsed,
-        input: studioPrompt,
-      });
-      extracted = extractImageFromInteraction(r);
-    }
 
-    if (!extracted) {
-      throw new Error(`${modelUsed} completed without returning an output image`);
-    }
+        if (!out) {
+          throw new Error(`${modelUsed} completed without returning an output image`);
+        }
+        return out;
+      },
+      projectRoot
+    );
 
     const dataUrl = `data:${extracted.mimeType};base64,${extracted.base64}`;
     const cachedUrl = await writeDiskCacheSafely(
@@ -731,7 +743,8 @@ export function studioRenderVitePlugin(): Plugin {
         return;
       }
 
-      const apiKey = resolveApiKey(viteEnv, projectRoot);
+      const keyPool = resolveGeminiKeyPool(viteEnv, projectRoot);
+      const apiKey = keyPool[0] || resolveApiKey(viteEnv, projectRoot);
       if (!apiKey) {
         sendJson(res, 503, {
           error: 'GEMINI_API_KEY is not configured in .env for gemini-nano-banana-2.1 studio rendering.',
