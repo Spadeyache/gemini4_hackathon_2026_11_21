@@ -1,0 +1,327 @@
+{
+  "boot_id": "demo-brand",
+  "brand_card": "Kestrel & Clay is ceramicist and printmaker Maren Solis's cone 10 reduction studio. Voice: grounded, unhurried, tactile, specific about clay, wood ash, and firing steps—never hype, countdowns, or invented claims. Values: honest raw clay, small-batch daily utility, open studio notes. Dynamic: maker→collector; Maren shares firing logs and invites collectors into glaze choices. Visitors come either for daily stoneware coffee tools (espresso cups, ash-glaze drippers, custom table sets) or for process zines, numbered woodblock kiln prints, and one-off basalt vessels. Guide ritual brewers toward warm, tactile table pieces and collectors toward editions, kiln provenance, and solo vessels.",
+  "catalog": [
+    {
+      "id": "p_glaze_swatch_zine",
+      "title": "Ash & Iron Glaze Swatch Zine",
+      "tier": "entry",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "process", "paper"],
+      "zone_id": "zone_kiln",
+      "blurbs": [
+        "Twelve wood-ash glaze tests straight from our cone 10 notebook.",
+        "Compact 24-page field guide to clay bodies, ash ratios, and kiln moods."
+      ]
+    },
+    {
+      "id": "p_throwing_notes_pdf",
+      "title": "Cone 10 Throwing & Trimming Notes",
+      "tier": "core",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "process", "guide"],
+      "zone_id": "zone_kiln",
+      "blurbs": [
+        "My bench measurements for balanced rims, crisp foot rings, and clean pours.",
+        "Instant PDF download with printable wall-thickness templates and kiln logs."
+      ]
+    },
+    {
+      "id": "p_kiln_firing_workshop",
+      "title": "Weekend Kiln Loading & Glaze Session",
+      "tier": "signature",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "process", "studio"],
+      "zone_id": "zone_kiln",
+      "blurbs": [
+        "Glaze three stoneware forms beside me and learn how placement shapes the finish.",
+        "Includes three bisque vessels, ash glazes, and finished firing pickup."
+      ]
+    },
+    {
+      "id": "p_espresso_cup",
+      "title": "Speckled Stoneware Espresso Cup",
+      "tier": "entry",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "coffee", "stoneware"],
+      "zone_id": "zone_table",
+      "blurbs": [
+        "Pulled from cone 10 reduction with warm iron speckles along every rim.",
+        "Four-ounce stoneware cup that holds heat well past the last sip."
+      ]
+    },
+    {
+      "id": "p_ash_glaze_dripper",
+      "title": "Fluted Ash-Glaze Pour-Over Dripper",
+      "tier": "core",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "coffee", "stoneware"],
+      "zone_id": "zone_table",
+      "blurbs": [
+        "Hand-carved inner flutes inspired by carved studio grid lines.",
+        "Fits standard #02 paper filters and retains brewing heat without preheating fuss."
+      ]
+    },
+    {
+      "id": "p_tableware_commission",
+      "title": "Bespoke Four-Piece Coffee Table Set",
+      "tier": "signature",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "coffee", "bespoke"],
+      "zone_id": "zone_table",
+      "blurbs": [
+        "Thrown as a single family from one wedge of speckled clay and fired side by side.",
+        "Includes a 20-minute glaze selection call and signed firing log card."
+      ]
+    },
+    {
+      "id": "p_kiln_postcard_set",
+      "title": "Kiln Shelf Study Postcard Folio",
+      "tier": "entry",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "prints", "paper"],
+      "zone_id": "zone_gallery",
+      "blurbs": [
+        "Six tactile studies of wood-ash rings left behind on the kiln shelf.",
+        "Frameable A6 cards printed on heavy 300 gsm cotton rag stock."
+      ]
+    },
+    {
+      "id": "p_woodblock_kiln_print",
+      "title": "Numbered Woodblock Kiln Grid Print",
+      "tier": "core",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "prints", "wall"],
+      "zone_id": "zone_gallery",
+      "blurbs": [
+        "Carved in birch and burnished by hand with iron-oxide studio ink.",
+        "Signed A3 edition on deckle-edge kozo paper, ready for standard framing."
+      ]
+    },
+    {
+      "id": "p_basalt_vessel",
+      "title": "Reduction-Fired Basalt Neck Vessel",
+      "tier": "signature",
+      "tags": ["mybrand", "mybrand:kestrel-clay", "boot:demo-brand", "stoneware", "sculptural"],
+      "zone_id": "zone_gallery",
+      "blurbs": [
+        "One-off blackened basalt form with a natural melted birch-ash shoulder.",
+        "Stands 28 cm tall with sealed interior suitable for dry branches or water."
+      ]
+    }
+  ],
+  "policy": {
+    "dynamic": "maker→collector",
+    "objective": "help each visitor find what fits them: look → inspect → add to cart",
+    "levers": [
+      {
+        "path": "/hero_plinth/product_id",
+        "allowed": "any product id"
+      },
+      {
+        "path": "/zones/{zone}/slots/{slot}/product_id",
+        "allowed": "ids of products assigned to {zone}"
+      },
+      {
+        "path": "/zones/{zone}/lighting",
+        "allowed": "ids in variant_pools.lighting"
+      },
+      {
+        "path": "/zones/{zone}/signage",
+        "allowed": "variant_pools.signage[{zone}], or a rewrite ≤60 chars with no new facts"
+      },
+      {
+        "path": "/blurbs/{product}",
+        "allowed": "0 or 1"
+      },
+      {
+        "path": "/host_note",
+        "allowed": "a rewrite ≤90 chars in the host's voice, no new facts"
+      },
+      {
+        "path": "/guide_path/target_zone",
+        "allowed": "any zone id"
+      }
+    ],
+    "frozen": [
+      "brand_core",
+      "room",
+      "entrance",
+      "zone geometry",
+      "fixtures",
+      "prices",
+      "variants",
+      "product facts",
+      "logo",
+      "palette"
+    ],
+    "rules": [
+      {
+        "id": "r1",
+        "priority": 1,
+        "when": "inspects(tag:coffee) >= 2 AND current_zone == zone_table",
+        "do": {
+          "path": "/zones/zone_table/slots/s_table_1/product_id",
+          "value": "top_product(tag:coffee, zone:zone_table)"
+        },
+        "why": "comparing coffee stoneware in daily table zone"
+      },
+      {
+        "id": "r2",
+        "priority": 2,
+        "when": "inspects(tag:prints) >= 2 AND current_zone == zone_gallery",
+        "do": {
+          "path": "/zones/zone_gallery/slots/s_gallery_1/product_id",
+          "value": "top_product(tag:prints, zone:zone_gallery)"
+        },
+        "why": "comparing woodblock kiln prints in gallery zone"
+      },
+      {
+        "id": "r3",
+        "priority": 3,
+        "when": "add_to_cart(p_espresso_cup) >= 1",
+        "do": {
+          "path": "/hero_plinth/product_id",
+          "value": "complement(p_espresso_cup)"
+        },
+        "why": "added espresso cup; surface pairing coffee piece on hero plinth"
+      },
+      {
+        "id": "r4",
+        "priority": 4,
+        "when": "dwell_s(zone_gallery) >= 10 AND current_zone == zone_gallery",
+        "do": {
+          "path": "/zones/zone_gallery/lighting",
+          "value": "gallery_spot"
+        },
+        "why": "lingering in gallery; shift lighting to focused gallery spotlight"
+      },
+      {
+        "id": "r5",
+        "priority": 5,
+        "when": "look_s(p_ash_glaze_dripper) >= 3",
+        "do": {
+          "path": "/blurbs/p_ash_glaze_dripper",
+          "value": 1
+        },
+        "why": "sustained look at dripper; flip blurb to practical brewing fit"
+      },
+      {
+        "id": "r6",
+        "priority": 6,
+        "when": "quick_exits(zone_kiln) >= 1",
+        "do": {
+          "path": "/guide_path/target_zone",
+          "value": "top_zone(dwell_s)"
+        },
+        "why": "skimmed kiln bench quickly; point guide path toward highest-dwell zone"
+      }
+    ],
+    "limits": {
+      "first_change_after_s": 12,
+      "max_ops_per_change": 3,
+      "cooldown_s": 8,
+      "max_ops_per_session": 15,
+      "lever_min_interval_s": 20,
+      "deadline_ms": 2500
+    }
+  },
+  "pools": {
+    "lighting": [
+      {
+        "id": "warm_clay",
+        "color_temp_k": 3000,
+        "intensity": 0.85,
+        "spot": false
+      },
+      {
+        "id": "studio_daylight",
+        "color_temp_k": 4600,
+        "intensity": 0.95,
+        "spot": false
+      },
+      {
+        "id": "gallery_spot",
+        "color_temp_k": 2700,
+        "intensity": 0.72,
+        "spot": true
+      }
+    ],
+    "signage": {
+      "zone_kiln": [
+        "Kiln Bench — clay, ash & firing notes",
+        "Inside Cone 10 — raw glaze studies & studio guides"
+      ],
+      "zone_table": [
+        "Daily Table — morning stoneware rituals",
+        "Built for Morning Coffee — wheel-thrown to hold heat"
+      ],
+      "zone_gallery": [
+        "Edition Wall — prints & basalt vessels",
+        "Quiet Editions — numbered woodblocks & solo vessels"
+      ]
+    }
+  },
+  "base_state": {
+    "/hero_plinth/product_id": "p_glaze_swatch_zine",
+    "/guide_path/target_zone": "zone_kiln",
+    "/host_note": "Start at the glaze bench, or follow the floor path toward the coffee table.",
+    "/zones/zone_kiln/slots/s_kiln_1/product_id": "p_glaze_swatch_zine",
+    "/zones/zone_kiln/slots/s_kiln_2/product_id": "p_throwing_notes_pdf",
+    "/zones/zone_table/slots/s_table_1/product_id": "p_espresso_cup",
+    "/zones/zone_table/slots/s_table_2/product_id": "p_ash_glaze_dripper",
+    "/zones/zone_gallery/slots/s_gallery_1/product_id": "p_kiln_postcard_set",
+    "/zones/zone_gallery/slots/s_gallery_2/product_id": "p_basalt_vessel",
+    "/zones/zone_kiln/lighting": "studio_daylight",
+    "/zones/zone_table/lighting": "warm_clay",
+    "/zones/zone_gallery/lighting": "warm_clay",
+    "/zones/zone_kiln/signage": "Kiln Bench — clay, ash & firing notes",
+    "/zones/zone_table/signage": "Daily Table — morning stoneware rituals",
+    "/zones/zone_gallery/signage": "Edition Wall — prints & basalt vessels",
+    "/blurbs/p_glaze_swatch_zine": 0,
+    "/blurbs/p_throwing_notes_pdf": 0,
+    "/blurbs/p_kiln_firing_workshop": 0,
+    "/blurbs/p_espresso_cup": 0,
+    "/blurbs/p_ash_glaze_dripper": 0,
+    "/blurbs/p_tableware_commission": 0,
+    "/blurbs/p_kiln_postcard_set": 0,
+    "/blurbs/p_woodblock_kiln_print": 0,
+    "/blurbs/p_basalt_vessel": 0
+  },
+  "demo_personas": [
+    {
+      "name": "Morning Coffee Ritualist",
+      "segment": "seg_daily",
+      "events": [
+        { "t": 0, "type": "enter_zone", "zone": "zone_kiln" },
+        { "t": 2, "type": "exit_zone", "zone": "zone_kiln", "ms": 2000 },
+        { "t": 4, "type": "enter_zone", "zone": "zone_table" },
+        { "t": 8, "type": "look", "zone": "zone_table", "product_id": "p_ash_glaze_dripper", "ms": 3400 },
+        { "t": 13, "type": "inspect", "zone": "zone_table", "product_id": "p_ash_glaze_dripper" },
+        { "t": 20, "type": "look", "zone": "zone_table", "product_id": "p_espresso_cup", "ms": 2200 },
+        { "t": 24, "type": "inspect", "zone": "zone_table", "product_id": "p_espresso_cup" },
+        { "t": 31, "type": "add_to_cart", "zone": "zone_table", "product_id": "p_espresso_cup" },
+        { "t": 45, "type": "look", "zone": "zone_table", "product_id": "p_tableware_commission", "ms": 3000 },
+        { "t": 54, "type": "inspect", "zone": "zone_table", "product_id": "p_tableware_commission" }
+      ],
+      "expected": [
+        "guide_path shifts to zone_table after quick exit from zone_kiln",
+        "p_ash_glaze_dripper blurb flips to index 1 (practical brewing fit)",
+        "zone_table slot s_table_1 promotes p_tableware_commission and hero_plinth shows coffee complement by ~35 s"
+      ]
+    },
+    {
+      "name": "Collector & Print Seeker",
+      "segment": "seg_collector",
+      "events": [
+        { "t": 0, "type": "enter_zone", "zone": "zone_kiln" },
+        { "t": 5, "type": "look", "zone": "zone_kiln", "product_id": "p_glaze_swatch_zine", "ms": 1800 },
+        { "t": 8, "type": "exit_zone", "zone": "zone_kiln", "ms": 8000 },
+        { "t": 11, "type": "enter_zone", "zone": "zone_gallery" },
+        { "t": 16, "type": "look", "zone": "zone_gallery", "product_id": "p_kiln_postcard_set", "ms": 2600 },
+        { "t": 20, "type": "inspect", "zone": "zone_gallery", "product_id": "p_kiln_postcard_set" },
+        { "t": 28, "type": "look", "zone": "zone_gallery", "product_id": "p_basalt_vessel", "ms": 3200 },
+        { "t": 34, "type": "inspect", "zone": "zone_gallery", "product_id": "p_kiln_postcard_set" },
+        { "t": 44, "type": "look", "zone": "zone_gallery", "product_id": "p_woodblock_kiln_print", "ms": 3500 },
+        { "t": 52, "type": "inspect", "zone": "zone_gallery", "product_id": "p_woodblock_kiln_print" }
+      ],
+      "expected": [
+        "zone_gallery lighting shifts to gallery_spot after 10 s dwell",
+        "zone_gallery slot s_gallery_1 promotes p_woodblock_kiln_print after 2 print inspects",
+        "host_note and gallery signage speak to numbered prints and solo vessels"
+      ]
+    }
+  ]
+}
