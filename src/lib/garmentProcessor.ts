@@ -708,8 +708,83 @@ export function processGarmentImageSync(
     for (let i = 0; i < n; i++) dilatedCore[i] = dilatedCore[i] && fgFilled[i] ? 1 : 0;
     let fgOpen = fillInteriorPinholes(dilatedCore, w, h);
 
-    // Slice off bright JPEG 4:2:0 chroma-ringing bumps outside dark trim (cuffs/collar)
-    const deepTrimSeed = erodeMask(fgOpen, w, h, 9);
+    // Punch out enclosed studio-background armpit/sleeve-gap triangles on dark long-sleeve garments
+    if (bgL > 78.0) {
+      let fgLsum = 0;
+      let fgLcnt = 0;
+      for (let i = 0; i < n; i += 4) {
+        if (core[i]) {
+          fgLsum += L[i];
+          fgLcnt++;
+        }
+      }
+      const meanGarmentL = fgLcnt > 0 ? fgLsum / fgLcnt : bgL;
+      if (bgL - meanGarmentL > 40.0) {
+        const visitedGap = new Uint8Array(n);
+        const gapQueue = new Int32Array(n);
+        for (let i = 0; i < n; i++) {
+          if (!fgOpen[i] || !passable[i] || bgFlood[i] || visitedGap[i]) continue;
+          let head = 0;
+          let tail = 0;
+          let sumX = 0;
+          let sumY = 0;
+          visitedGap[i] = 1;
+          gapQueue[tail++] = i;
+
+          while (head < tail) {
+            const cur = gapQueue[head++];
+            const gx = cur % w;
+            const gy = (cur - gx) / w;
+            sumX += gx;
+            sumY += gy;
+            if (gy > 0) {
+              const nb = cur - w;
+              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+                visitedGap[nb] = 1;
+                gapQueue[tail++] = nb;
+              }
+            }
+            if (gy + 1 < h) {
+              const nb = cur + w;
+              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+                visitedGap[nb] = 1;
+                gapQueue[tail++] = nb;
+              }
+            }
+            if (gx > 0) {
+              const nb = cur - 1;
+              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+                visitedGap[nb] = 1;
+                gapQueue[tail++] = nb;
+              }
+            }
+            if (gx + 1 < w) {
+              const nb = cur + 1;
+              if (fgOpen[nb] && passable[nb] && !bgFlood[nb] && !visitedGap[nb]) {
+                visitedGap[nb] = 1;
+                gapQueue[tail++] = nb;
+              }
+            }
+          }
+
+          const cx = sumX / tail;
+          const cy = sumY / tail;
+          const isLateralArmpitSlit =
+            tail >= 16 &&
+            tail <= Math.floor(n * 0.04) &&
+            cy > h * 0.28 &&
+            (cx < w * 0.36 || cx > w * 0.64);
+          if (isLateralArmpitSlit) {
+            for (let k = 0; k < tail; k++) {
+              fgOpen[gapQueue[k]] = 0;
+            }
+          }
+        }
+      }
+    }
+
+    // Slice off bright JPEG 4:2:0 chroma-ringing halos AND pale neutral studio drop-shadows under dark hems/cuffs
+    const deepTrimSeed = erodeMask(fgOpen, w, h, 16);
     let hasDeepTrim = false;
     for (let i = 0; i < n; i++) {
       if (deepTrimSeed[i]) {
@@ -725,20 +800,25 @@ export function processGarmentImageSync(
         deepTrimSeed,
         w,
         h,
-        12
+        22
       );
       let removedHalo = false;
       for (let i = 0; i < n; i++) {
         if (fgOpen[i] && !deepTrimSeed[i]) {
           const [refL] = rgbSingleToLab(tR[i], tG[i], tB[i]);
-          if (bgL - refL > 15.0 && L[i] > bgL - 8.0) {
+          const pixBgChroma = Math.hypot(a[i] - bga, b[i] - bgb);
+          const shadowCutoffL =
+            bgL > 75.0 && bgL - refL > 35.0 && pixBgChroma < 8.5
+              ? refL + (bgL - refL) * 0.40
+              : bgL - 9.0;
+          if (bgL - refL > 15.0 && L[i] > shadowCutoffL) {
             fgOpen[i] = 0;
             removedHalo = true;
           }
         }
       }
       if (removedHalo) {
-        fgOpen = fillInteriorPinholes(largestConnectedComponent(fgOpen, w, h), w, h);
+        fgOpen = largestConnectedComponent(fgOpen, w, h);
       }
     }
 
@@ -748,7 +828,7 @@ export function processGarmentImageSync(
     const sdf = blurFloat2D(fgFloat, w, h, 2.1);
     const sdfThresh = new Uint8Array(n);
     for (let i = 0; i < n; i++) sdfThresh[i] = sdf[i] > 0.56 ? 1 : 0;
-    const fgClean = fillInteriorPinholes(largestConnectedComponent(sdfThresh, w, h), w, h);
+    const fgClean = largestConnectedComponent(sdfThresh, w, h);
 
     let deepInterior = erodeMask(fgClean, w, h, 5);
     let hasDeep = false;

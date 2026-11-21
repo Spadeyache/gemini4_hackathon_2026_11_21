@@ -217,76 +217,72 @@ export default function App() {
     let cancelled = false;
     const rackItems: GarmentAssetSet[] = activeConfig.racks.flatMap((r) => r.items);
 
-    Promise.all(
-      rackItems.map(async (item) => {
-        const primaryUrl =
-          item.productSpec?.customCutoutUrl ||
-          item.normalizedFrontCutoutUrl ||
-          item.frontCutoutUrl ||
-          item.rawUrl;
+    rackItems.forEach(async (item) => {
+      const primaryUrl =
+        item.productSpec?.customCutoutUrl ||
+        item.normalizedFrontCutoutUrl ||
+        item.frontCutoutUrl ||
+        item.rawUrl;
 
-        const isPrebakedTransparentAsset =
-          Boolean(primaryUrl) && primaryUrl.startsWith('/assets/garments/');
+      const isPrebakedTransparentAsset =
+        Boolean(primaryUrl) && primaryUrl.startsWith('/assets/garments/');
 
-        if (!isPrebakedTransparentAsset && primaryUrl) {
-          try {
-            const processed = await processGarmentInBrowser(primaryUrl, tuning.cutoutTolerance);
-            processed.normalTexture.colorSpace = THREE.NoColorSpace;
-            const resolved: GarmentResolvedTextures = {
-              frontMap: processed.frontTexture,
-              backMap: processed.backTexture,
-              normalMap: processed.normalTexture,
-              aspect: processed.aspect,
-            };
-            return { id: item.id, normalized: resolved, raw: resolved };
-          } catch {
-            return { id: item.id, normalized: undefined, raw: undefined };
-          }
+      if (!isPrebakedTransparentAsset && primaryUrl) {
+        try {
+          const processed = await processGarmentInBrowser(primaryUrl, tuning.cutoutTolerance);
+          if (cancelled) return;
+          processed.normalTexture.colorSpace = THREE.NoColorSpace;
+          const resolved: GarmentResolvedTextures = {
+            frontMap: processed.frontTexture,
+            backMap: processed.backTexture,
+            normalMap: processed.normalTexture,
+            aspect: processed.aspect,
+          };
+          setBakedTextures((prev) => ({
+            ...prev,
+            [item.id]: { normalized: resolved, raw: resolved },
+          }));
+        } catch {
+          // Ignore individual network failures
         }
-
-        const [normFront, normBack, normNormal, rawFront, rawBack, rawNormal] =
-          await Promise.all([
-            loadThreeTexture(item.normalizedFrontCutoutUrl || item.frontCutoutUrl, false),
-            loadThreeTexture(item.normalizedBackCutoutUrl || item.backCutoutUrl, false),
-            loadThreeTexture(item.normalizedNormalMapUrl || item.normalMapUrl, true),
-            loadThreeTexture(item.frontCutoutUrl, false),
-            loadThreeTexture(item.backCutoutUrl, false),
-            loadThreeTexture(item.normalMapUrl, true),
-          ]);
-
-        const fallbackAspect = item.aspect ?? 0.86;
-        return {
-          id: item.id,
-          normalized: normFront
-            ? {
-                frontMap: normFront,
-                backMap: normBack,
-                normalMap: normNormal,
-                aspect: getImageAspect(normFront, fallbackAspect),
-              }
-            : undefined,
-          raw: rawFront
-            ? {
-                frontMap: rawFront,
-                backMap: rawBack,
-                normalMap: rawNormal,
-                aspect: getImageAspect(rawFront, fallbackAspect),
-              }
-            : undefined,
-        };
-      })
-    ).then((results) => {
-      if (cancelled) return;
-      const nextMap: Record<
-        string,
-        { normalized?: GarmentResolvedTextures; raw?: GarmentResolvedTextures }
-      > = {};
-      for (const r of results) {
-        if (r.normalized || r.raw) {
-          nextMap[r.id] = { normalized: r.normalized, raw: r.raw };
-        }
+        return;
       }
-      setBakedTextures((prev) => ({ ...prev, ...nextMap }));
+
+      const [normFront, normBack, normNormal, rawFront, rawBack, rawNormal] =
+        await Promise.all([
+          loadThreeTexture(item.normalizedFrontCutoutUrl || item.frontCutoutUrl, false),
+          loadThreeTexture(item.normalizedBackCutoutUrl || item.backCutoutUrl, false),
+          loadThreeTexture(item.normalizedNormalMapUrl || item.normalMapUrl, true),
+          loadThreeTexture(item.frontCutoutUrl, false),
+          loadThreeTexture(item.backCutoutUrl, false),
+          loadThreeTexture(item.normalMapUrl, true),
+        ]);
+
+      if (cancelled) return;
+      const fallbackAspect = item.aspect ?? 0.86;
+      const normalized = normFront
+        ? {
+            frontMap: normFront,
+            backMap: normBack,
+            normalMap: normNormal,
+            aspect: getImageAspect(normFront, fallbackAspect),
+          }
+        : undefined;
+      const raw = rawFront
+        ? {
+            frontMap: rawFront,
+            backMap: rawBack,
+            normalMap: rawNormal,
+            aspect: getImageAspect(rawFront, fallbackAspect),
+          }
+        : undefined;
+
+      if (normalized || raw) {
+        setBakedTextures((prev) => ({
+          ...prev,
+          [item.id]: { normalized, raw },
+        }));
+      }
     });
 
     return () => {
@@ -690,9 +686,13 @@ export default function App() {
 
         <BoutiqueWorld config={activeConfig}>
           {/* Hero Apparel Stand (Photorealistic Studio Packshot Cutouts) */}
-          {heroRackItems.length > 0 && activeConfig.racks[0] && (
+          {activeConfig.racks[0] && (
             <BoutiqueRack
-              rack={activeConfig.racks[0]}
+              rack={
+                heroRackItems.length > 0
+                  ? activeConfig.racks[0]
+                  : { ...activeConfig.racks[0], items: [] }
+              }
               garments={heroRackItems}
               palette={activeConfig.palette}
               metalness={activeConfig.metalness}
@@ -704,9 +704,13 @@ export default function App() {
           )}
 
           {/* Companion Capsule Apparel Rail */}
-          {secondaryRackItems.length > 0 && activeConfig.racks[1] && (
+          {activeConfig.racks[1] && effectiveTuning.showCapsuleCompanions && (
             <BoutiqueRack
-              rack={activeConfig.racks[1]}
+              rack={
+                secondaryRackItems.length > 0
+                  ? activeConfig.racks[1]
+                  : { ...activeConfig.racks[1], items: [] }
+              }
               garments={secondaryRackItems}
               palette={activeConfig.palette}
               metalness={activeConfig.metalness}

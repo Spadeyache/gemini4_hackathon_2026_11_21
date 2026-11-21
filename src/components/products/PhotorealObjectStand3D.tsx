@@ -737,7 +737,46 @@ export async function processObjectCutoutForStand(
 
     const dilated = dilateMask(core, w, h, 1);
     for (let i = 0; i < n; i++) dilated[i] = dilated[i] && fgFilled[i] ? 1 : 0;
-    const fgOpen = fillSmallInteriorPinholes(dilated, w, h);
+    let fgOpen = fillSmallInteriorPinholes(dilated, w, h);
+
+    // Strip pale neutral studio contact shadows under dark caps, vessels & monoliths on white seamless backgrounds
+    const shadowTrimSeed = erodeMask(fgOpen, w, h, 13);
+    let hasShadowSeed = false;
+    for (let i = 0; i < n; i++) {
+      if (shadowTrimSeed[i]) {
+        hasShadowSeed = true;
+        break;
+      }
+    }
+    if (hasShadowSeed) {
+      const { refR: sR, refG: sG, refB: sB } = propagateInteriorRgb(
+        rIn,
+        gIn,
+        bIn,
+        shadowTrimSeed,
+        w,
+        h,
+        18
+      );
+      let strippedShadow = false;
+      for (let i = 0; i < n; i++) {
+        if (fgOpen[i] && !shadowTrimSeed[i]) {
+          const [refL] = rgbSingleToLab(sR[i], sG[i], sB[i]);
+          const pixBgChroma = Math.hypot(a[i] - bga, b[i] - bgb);
+          const shadowCutoffL =
+            bgL > 75.0 && bgL - refL > 35.0 && pixBgChroma < 8.5
+              ? refL + (bgL - refL) * 0.40
+              : bgL - 8.5;
+          if (bgL - refL > 16.0 && L[i] > shadowCutoffL) {
+            fgOpen[i] = 0;
+            strippedShadow = true;
+          }
+        }
+      }
+      if (strippedShadow) {
+        fgOpen = fillSmallInteriorPinholes(retainPrimaryComponents(fgOpen, w, h), w, h);
+      }
+    }
 
     // Sub-pixel contour smoothing to eliminate JPEG macroblock stair-steps
     const fgFloat = new Float32Array(n);
