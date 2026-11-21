@@ -897,16 +897,16 @@ export const HangingApparel3D: React.FC<HangingApparel3DProps> = ({
           ? buildConformalTorsoPatchGeometry(profile, {
               side: 'front',
               centerV: 0.63,
-              spanTheta: 0.94,
-              spanV: 0.35,
-              offsetZ: 0.0065,
+              spanTheta: 0.86,
+              spanV: 0.34,
+              offsetZ: 0.015,
             })
           : buildConformalTorsoPatchGeometry(profile, {
               side: 'front',
               centerV: 0.58,
-              spanTheta: 1.0,
-              spanV: 0.38,
-              offsetZ: 0.0058,
+              spanTheta: 0.92,
+              spanV: 0.36,
+              offsetZ: 0.013,
             });
 
     const backGraphicGeo =
