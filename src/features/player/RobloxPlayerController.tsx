@@ -1192,7 +1192,6 @@ export const RobloxPlayerController: React.FC<RobloxPlayerControllerProps> = ({
             nearbyTarget.worldZ,
           ]}
           center
-          distanceFactor={5.5}
           zIndexRange={[18, 0]}
         >
           <button

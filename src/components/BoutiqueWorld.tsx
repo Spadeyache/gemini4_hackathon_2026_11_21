@@ -1009,7 +1009,7 @@ function ArchitecturalShell({
       </mesh>
 
       {/* 3D Brand Signage Mounted Inside Upper Arch */}
-      <group position={[0, 2.60, -2.065]} name="brand-arch-signage">
+      <group position={[0, 2.42, -2.065]} name="brand-arch-signage">
         {/* Warm halo back-glow rim behind metallic plaque */}
         <RoundedBox args={[1.92, 0.48, 0.012]} radius={0.04} smoothness={4} position={[0, 0, -0.012]}>
           <meshBasicMaterial color={coveGlowHex} transparent opacity={0.38} toneMapped={false} />

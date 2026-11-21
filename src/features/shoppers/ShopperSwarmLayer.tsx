@@ -921,25 +921,26 @@ const ShopperAvatarMesh: React.FC<ShopperAvatarMeshProps> = ({
 
       {/* Floating Overhead Shopper Persona + Live Thought + YES/NO Pill Badge */}
       <Html
-        position={[0, 1.76, 0]}
+        position={[0, 1.78, 0]}
         center
-        distanceFactor={6}
         zIndexRange={[12, 0]}
         pointerEvents="none"
       >
         <div
           style={{
-            width: 208,
-            padding: '7px 10px',
-            borderRadius: 11,
-            background: 'rgba(15, 16, 15, 0.86)',
-            backdropFilter: 'blur(10px)',
-            border: `1.5px solid ${borderColor}`,
-            boxShadow: '0 8px 22px rgba(0, 0, 0, 0.36)',
+            width: 168,
+            padding: '5px 8px',
+            borderRadius: 9,
+            background: 'rgba(15, 16, 15, 0.84)',
+            backdropFilter: 'blur(8px)',
+            border: `1px solid ${borderColor}`,
+            boxShadow: '0 6px 18px rgba(0, 0, 0, 0.32)',
             color: '#F6F3EB',
             fontFamily: 'system-ui, -apple-system, sans-serif',
             pointerEvents: 'none',
             userSelect: 'none',
+            transform: 'scale(0.88)',
+            transformOrigin: 'center bottom',
             transition: 'border-color 0.2s ease',
           }}
         >
@@ -1124,10 +1125,11 @@ export const ShopperSwarmLayer: React.FC<ShopperSwarmLayerProps> = ({
     const initialBadges: Record<string, ShopperBadgeSnapshot> = {};
 
     const initialized: ShopperAgentRuntime[] = activePersonas.map((persona, idx) => {
-      // Spread cleanly across the boutique entrance foyer around z ≈ 4.8
-      const laneOffset = (idx - (activePersonas.length - 1) * 0.5) * 0.82;
-      const spawnX = THREE.MathUtils.clamp(laneOffset, -2.5, 2.5);
-      const spawnZ = 4.65 + (idx % 2) * 0.42;
+      // Spawn in left/right boutique side aisles ahead of the player camera so all shoppers are immediately visible in frame
+      const side = idx % 2 === 0 ? -1 : 1;
+      const tier = Math.floor(idx / 2);
+      const spawnX = side * (1.28 + tier * 0.56);
+      const spawnZ = 1.05 + tier * 0.68;
 
       const initialSlot = slots.length > 0 ? slots[idx % slots.length] : null;
       const waypoints = initialSlot
@@ -1365,8 +1367,8 @@ export const ShopperSwarmLayer: React.FC<ShopperSwarmLayerProps> = ({
           // Stroll briefly toward entrance / gallery lounge (z ≈ 3.8..4.8) or next rack
           const strollToEntrance = agent.visitCount % 2 === 0;
           if (strollToEntrance) {
-            const loungeX = ((i % 3) - 1) * 1.45 + (i % 2 === 0 ? 0.25 : -0.25);
-            const loungeZ = 4.35 + (i % 2) * 0.55;
+            const loungeX = (i % 2 === 0 ? -1 : 1) * (1.45 + (i % 3) * 0.42);
+            const loungeZ = 1.85 + (i % 2) * 0.55;
             agent.phase = 'STROLLING';
             agent.waypoints = planSmoothWaypoints(agent.x, agent.z, loungeX, loungeZ);
             agent.waypointIdx = 0;
