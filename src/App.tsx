@@ -20,7 +20,8 @@ import {
   type GarmentResolvedTextures,
   type RackGarmentItem,
 } from './components/BoutiqueRack';
-import { PedestalProduct3D } from './components/products/Product3DFactory';
+import { PhotorealObjectStand3D } from './components/products/PhotorealObjectStand3D';
+import { StudioProductModal } from './components/products/StudioProductModal';
 import { CAMERA_PRESETS, CameraRig, type CameraPresetId } from './components/CameraRig';
 import { DEFAULT_PRESET_ID, DEFAULT_TUNING_PARAMS, STORE_PRESETS } from './data/presets';
 import { UrlIngestBar } from './features/ingestion/UrlIngestBar';
@@ -69,6 +70,7 @@ function getInitialQueryParams() {
       sway: undefined as number | undefined,
       walk: false,
       swarm: false,
+      openStudioModal: false,
       hideHud: false,
       instantCam: false,
     };
@@ -95,6 +97,7 @@ function getInitialQueryParams() {
     sway: swayParam !== null ? Number(swayParam) : undefined,
     walk: params.get('walk') === '1',
     swarm: params.get('swarm') === '1' || params.get('judges') === '1',
+    openStudioModal: params.get('modal') === '1',
     hideHud: params.get('hud') === '0',
     instantCam: params.has('cam'),
   };
@@ -138,6 +141,14 @@ export default function App() {
     Record<string, IngestedGarmentTextures>
   >({});
 
+  // Studio-normalized cutout overrides (`gemini-nano-banana-2.1` applied back to 3D showroom!)
+  const [studioCutoutUrlOverrides, setStudioCutoutUrlOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [studioRackTexturesById, setStudioRackTexturesById] = useState<
+    Record<string, ProcessedGarmentTextures>
+  >({});
+
   const [customPaletteOverride, setCustomPaletteOverride] = useState<{
     wall?: string;
     accent?: string;
@@ -154,6 +165,9 @@ export default function App() {
   const [layoutMode, setLayoutMode] = useState<RackLayoutMode>(init.layout);
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
     'good-shot-ringer-tee'
+  );
+  const [studioModalProductId, setStudioModalProductId] = useState<string | null>(
+    init.openStudioModal ? 'good-shot-ringer-tee' : null
   );
 
   const [tuning, setTuning] = useState<GarmentTuningParams>(() => ({
@@ -194,18 +208,42 @@ export default function App() {
     };
   }, [ingestedStore, presetId, customPaletteOverride]);
 
-  // Load pre-baked cutout & normal textures ONLY for items that don't use parametric 3D `productSpec`
+  // Load rack garment cutouts for active preset:
+  // - Pre-baked transparent PNGs (`/assets/garments/*`) load directly via THREE.TextureLoader
+  // - Real internet studio packshots (`/api/proxy-image?...` or `https://...`) run through `processGarmentInBrowser`
+  //   so backgrounds are cleanly cut out in CIELAB space with 360° back synthesis & Sobel normal maps!
   useEffect(() => {
     if (ingestedStore) return;
     let cancelled = false;
-    const cutoutItems: GarmentAssetSet[] = activeConfig.racks
-      .flatMap((r) => r.items)
-      .filter((item) => !item.productSpec || Boolean(item.productSpec.customCutoutUrl));
-
-    if (cutoutItems.length === 0) return;
+    const rackItems: GarmentAssetSet[] = activeConfig.racks.flatMap((r) => r.items);
 
     Promise.all(
-      cutoutItems.map(async (item) => {
+      rackItems.map(async (item) => {
+        const primaryUrl =
+          item.productSpec?.customCutoutUrl ||
+          item.normalizedFrontCutoutUrl ||
+          item.frontCutoutUrl ||
+          item.rawUrl;
+
+        const isPrebakedTransparentAsset =
+          Boolean(primaryUrl) && primaryUrl.startsWith('/assets/garments/');
+
+        if (!isPrebakedTransparentAsset && primaryUrl) {
+          try {
+            const processed = await processGarmentInBrowser(primaryUrl, tuning.cutoutTolerance);
+            processed.normalTexture.colorSpace = THREE.NoColorSpace;
+            const resolved: GarmentResolvedTextures = {
+              frontMap: processed.frontTexture,
+              backMap: processed.backTexture,
+              normalMap: processed.normalTexture,
+              aspect: processed.aspect,
+            };
+            return { id: item.id, normalized: resolved, raw: resolved };
+          } catch {
+            return { id: item.id, normalized: undefined, raw: undefined };
+          }
+        }
+
         const [normFront, normBack, normNormal, rawFront, rawBack, rawNormal] =
           await Promise.all([
             loadThreeTexture(item.normalizedFrontCutoutUrl || item.frontCutoutUrl, false),
@@ -216,15 +254,25 @@ export default function App() {
             loadThreeTexture(item.normalMapUrl, true),
           ]);
 
+        const fallbackAspect = item.aspect ?? 0.86;
         return {
           id: item.id,
-          fallbackAspect: item.aspect ?? 0.86,
-          normFront,
-          normBack,
-          normNormal,
-          rawFront,
-          rawBack,
-          rawNormal,
+          normalized: normFront
+            ? {
+                frontMap: normFront,
+                backMap: normBack,
+                normalMap: normNormal,
+                aspect: getImageAspect(normFront, fallbackAspect),
+              }
+            : undefined,
+          raw: rawFront
+            ? {
+                frontMap: rawFront,
+                backMap: rawBack,
+                normalMap: rawNormal,
+                aspect: getImageAspect(rawFront, fallbackAspect),
+              }
+            : undefined,
         };
       })
     ).then((results) => {
@@ -234,27 +282,8 @@ export default function App() {
         { normalized?: GarmentResolvedTextures; raw?: GarmentResolvedTextures }
       > = {};
       for (const r of results) {
-        if (r.normFront) {
-          nextMap[r.id] = {
-            ...nextMap[r.id],
-            normalized: {
-              frontMap: r.normFront,
-              backMap: r.normBack,
-              normalMap: r.normNormal,
-              aspect: getImageAspect(r.normFront, r.fallbackAspect),
-            },
-          };
-        }
-        if (r.rawFront) {
-          nextMap[r.id] = {
-            ...nextMap[r.id],
-            raw: {
-              frontMap: r.rawFront,
-              backMap: r.rawBack,
-              normalMap: r.rawNormal,
-              aspect: getImageAspect(r.rawFront, r.fallbackAspect),
-            },
-          };
+        if (r.normalized || r.raw) {
+          nextMap[r.id] = { normalized: r.normalized, raw: r.raw };
         }
       }
       setBakedTextures((prev) => ({ ...prev, ...nextMap }));
@@ -263,7 +292,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeConfig.racks, ingestedStore]);
+  }, [activeConfig.racks, ingestedStore, tuning.cutoutTolerance]);
 
   // Live browser cutout processor for custom uploaded clothing photo
   useEffect(() => {
@@ -312,13 +341,41 @@ export default function App() {
       Object.values(prev).forEach((t) => t.dispose());
       return result.resolvedTexturesById;
     });
+    setStudioCutoutUrlOverrides({});
+    setStudioRackTexturesById((prev) => {
+      Object.values(prev).forEach((t) => t.dispose());
+      return {};
+    });
     setCustomPaletteOverride(null);
     setUploadedFileName(null);
     setIngestedStore(result.storeConfig);
     setConversionStats(null);
     setSelectedGarmentId(result.summary.heroGarmentId);
+    setStudioModalProductId(null);
     setTuning((p) => ({ ...p, sourceMode: 'ai_normalized', renderMode: 'volumetric' }));
   }, []);
+
+  const handleApplyStudioCutoutTo3D = useCallback(
+    (productId: string, cleanCutoutDataUrl: string) => {
+      // Update pedestal object cutout override
+      setStudioCutoutUrlOverrides((prev) => ({
+        ...prev,
+        [productId]: cleanCutoutDataUrl,
+      }));
+
+      // Also process for hanging 3D rack garments if this product is on a rack
+      processGarmentInBrowser(cleanCutoutDataUrl, tuning.cutoutTolerance)
+        .then((processed) => {
+          processed.normalTexture.colorSpace = THREE.NoColorSpace;
+          setStudioRackTexturesById((prev) => {
+            if (prev[productId]) prev[productId].dispose();
+            return { ...prev, [productId]: processed };
+          });
+        })
+        .catch((err) => console.error('Failed to apply studio cutout to rack:', err));
+    },
+    [tuning.cutoutTolerance]
+  );
 
   const handleUploadedFile = useCallback(
     (file: File) => {
@@ -373,6 +430,23 @@ export default function App() {
 
   const toRackGarmentItem = useCallback(
     (item: GarmentAssetSet, isHeroItem: boolean): RackGarmentItem | null => {
+      // 0. `gemini-nano-banana-2.1` studio-normalized rack cutout override
+      const studioOverride = studioRackTexturesById[item.id];
+      if (studioOverride) {
+        return {
+          id: item.id,
+          sku: item.sku,
+          title: item.title,
+          subtitle: item.subtitle,
+          price: item.price,
+          featured: isHeroItem,
+          frontMap: studioOverride.frontTexture,
+          backMap: studioOverride.backTexture,
+          normalMap: studioOverride.normalTexture,
+          aspect: studioOverride.aspect,
+        };
+      }
+
       // 1. Custom uploaded garment photo overrides hero stand
       if (isHeroItem && tuning.sourceMode === 'custom_upload' && liveHeroProcessed) {
         return {
@@ -389,23 +463,9 @@ export default function App() {
         };
       }
 
-      // 2. Parametric 3D apparel invented from website theme (`HeavyweightHoodie3D`, `VarsityJacket3D`, `TailoredTee3D`)
-      if (item.productSpec && !item.productSpec.customCutoutUrl) {
-        const ingestedCutout = ingestedTexturesById[item.id];
-        if (ingestedCutout) {
-          return {
-            id: item.id,
-            sku: item.sku,
-            title: item.title,
-            subtitle: item.subtitle,
-            price: item.price,
-            featured: isHeroItem,
-            frontMap: ingestedCutout.frontMap,
-            backMap: ingestedCutout.backMap,
-            normalMap: ingestedCutout.normalMap,
-            aspect: ingestedCutout.aspect,
-          };
-        }
+      // 2. Live URL-ingested internet studio packshot cutout
+      const ingestedCutout = ingestedTexturesById[item.id];
+      if (ingestedCutout) {
         return {
           id: item.id,
           sku: item.sku,
@@ -413,11 +473,14 @@ export default function App() {
           subtitle: item.subtitle,
           price: item.price,
           featured: isHeroItem,
-          productSpec: item.productSpec,
+          frontMap: ingestedCutout.frontMap,
+          backMap: ingestedCutout.backMap,
+          normalMap: ingestedCutout.normalMap,
+          aspect: ingestedCutout.aspect,
         };
       }
 
-      // 3. Explicit studio garment cutout (e.g. Good Shot Club ringer tee)
+      // 3. Explicit raw cutout mode on Good Shot Club
       if (isHeroItem && tuning.sourceMode === 'raw_cutout' && liveHeroProcessed) {
         return {
           id: item.id,
@@ -433,37 +496,35 @@ export default function App() {
         };
       }
 
+      // 4. Pre-baked or preset packshot cutout
       const entry = bakedTextures[item.id];
       const tex =
         isHeroItem && tuning.sourceMode === 'raw_cutout' && entry?.raw
           ? entry.raw
           : (entry?.normalized ?? entry?.raw);
 
-      if (!tex) {
-        return item.productSpec
-          ? {
-              id: item.id,
-              sku: item.sku,
-              title: item.title,
-              subtitle: item.subtitle,
-              price: item.price,
-              featured: isHeroItem,
-              productSpec: item.productSpec,
-            }
-          : null;
+      if (tex) {
+        return {
+          id: item.id,
+          sku: item.sku,
+          title: item.title,
+          subtitle: item.subtitle,
+          price: item.price,
+          featured: isHeroItem,
+          ...tex,
+        };
       }
 
-      return {
-        id: item.id,
-        sku: item.sku,
-        title: item.title,
-        subtitle: item.subtitle,
-        price: item.price,
-        featured: isHeroItem,
-        ...tex,
-      };
+      return null;
     },
-    [bakedTextures, ingestedTexturesById, liveHeroProcessed, tuning.sourceMode, uploadedFileName]
+    [
+      bakedTextures,
+      ingestedTexturesById,
+      liveHeroProcessed,
+      studioRackTexturesById,
+      tuning.sourceMode,
+      uploadedFileName,
+    ]
   );
 
   // Build resolved RackGarmentItems for hero rack & secondary rack
@@ -504,31 +565,97 @@ export default function App() {
     };
   }, [activeConfig.racks, layoutMode, toRackGarmentItem]);
 
-  // 3D Physical Hard-Goods & Accessories Placed on Table & Pedestals
+  // Real Internet Physical Objects Placed on Table & Pedestals (`PhotorealObjectStand3D`)
   const pedestalProducts = useMemo(() => {
     const prods = activeConfig.products ?? [];
-    return prods.filter(
-      (
-        p
-      ): p is InventedProductSpec & {
-        placement: 'center_table' | 'left_pedestal' | 'right_pedestal';
-      } =>
-        p.placement === 'center_table' ||
-        p.placement === 'left_pedestal' ||
-        p.placement === 'right_pedestal'
-    );
-  }, [activeConfig.products]);
+    return prods
+      .filter(
+        (
+          p
+        ): p is InventedProductSpec & {
+          placement: 'center_table' | 'left_pedestal' | 'right_pedestal';
+        } =>
+          p.placement === 'center_table' ||
+          p.placement === 'left_pedestal' ||
+          p.placement === 'right_pedestal'
+      )
+      .map((p) =>
+        studioCutoutUrlOverrides[p.id]
+          ? { ...p, customCutoutUrl: studioCutoutUrlOverrides[p.id] }
+          : p
+      );
+  }, [activeConfig.products, studioCutoutUrlOverrides]);
+
+  // Resolve any clicked product ID (from rack OR pedestal) into an `InventedProductSpec` for `StudioProductModal`
+  const resolveProductSpecById = useCallback(
+    (productId: string | null): InventedProductSpec | null => {
+      if (!productId) return null;
+      const fromProducts = activeConfig.products?.find((p) => p.id === productId);
+      if (fromProducts) {
+        return studioCutoutUrlOverrides[productId]
+          ? { ...fromProducts, customCutoutUrl: studioCutoutUrlOverrides[productId] }
+          : fromProducts;
+      }
+
+      const rackItem = activeConfig.racks
+        .flatMap((r) => r.items)
+        .find((i) => i.id === productId);
+      if (!rackItem) return null;
+
+      if (rackItem.productSpec) {
+        return studioCutoutUrlOverrides[productId]
+          ? {
+              ...rackItem.productSpec,
+              customCutoutUrl: studioCutoutUrlOverrides[productId],
+            }
+          : rackItem.productSpec;
+      }
+
+      return {
+        id: rackItem.id,
+        sku: rackItem.sku,
+        title: rackItem.title,
+        subtitle: rackItem.subtitle ?? activeConfig.brandName,
+        category: 'structured_tshirt',
+        placement: rackItem.featured ? 'hero_rack' : 'capsule_rack',
+        price: rackItem.price,
+        primaryColor: rackItem.dominantHex ?? activeConfig.palette.wall,
+        secondaryColor: activeConfig.palette.accent,
+        accentColor: activeConfig.palette.rackMetal,
+        graphicHeadline: activeConfig.brandName,
+        graphicMotif: 'monogram_crest',
+        designRationale: `Curated hero apparel piece for ${activeConfig.brandName}.`,
+        featured: rackItem.featured,
+        customCutoutUrl:
+          studioCutoutUrlOverrides[productId] ||
+          rackItem.normalizedFrontCutoutUrl ||
+          rackItem.frontCutoutUrl ||
+          rackItem.rawUrl,
+      };
+    },
+    [activeConfig, studioCutoutUrlOverrides]
+  );
+
+  const activeStudioModalProduct = useMemo(
+    () => resolveProductSpecById(studioModalProductId),
+    [resolveProductSpecById, studioModalProductId]
+  );
+
+  const handleOpenProductShowcase = useCallback((id: string) => {
+    setSelectedGarmentId(id);
+    setStudioModalProductId(id);
+  }, []);
 
   const effectiveTuning = useMemo(
     () => ({
       ...tuning,
       sleeveRelax:
-        !ingestedStore && tuning.sourceMode === 'ai_normalized'
+        !ingestedStore && presetId === 'good-shot-club' && tuning.sourceMode === 'ai_normalized'
           ? Math.min(tuning.sleeveRelax, 0.22)
           : tuning.sleeveRelax,
       showCapsuleCompanions: layoutMode !== 'solo',
     }),
-    [tuning, layoutMode, ingestedStore]
+    [tuning, layoutMode, ingestedStore, presetId]
   );
 
   const selectCamera = (cam: CameraPresetId) => {
@@ -562,7 +689,7 @@ export default function App() {
         {!walkMode && <CameraRig preset={cameraPreset} instant={instantCamera} />}
 
         <BoutiqueWorld config={activeConfig}>
-          {/* Hero Apparel Stand */}
+          {/* Hero Apparel Stand (Photorealistic Studio Packshot Cutouts) */}
           {heroRackItems.length > 0 && activeConfig.racks[0] && (
             <BoutiqueRack
               rack={activeConfig.racks[0]}
@@ -572,7 +699,7 @@ export default function App() {
               metalRoughness={activeConfig.metalRoughness}
               tuning={effectiveTuning}
               selectedGarmentId={selectedGarmentId}
-              onSelectGarment={setSelectedGarmentId}
+              onSelectGarment={handleOpenProductShowcase}
             />
           )}
 
@@ -586,21 +713,21 @@ export default function App() {
               metalRoughness={activeConfig.metalRoughness}
               tuning={effectiveTuning}
               selectedGarmentId={selectedGarmentId}
-              onSelectGarment={setSelectedGarmentId}
+              onSelectGarment={handleOpenProductShowcase}
             />
           )}
 
-          {/* 3D Physical Hard-Goods & Accessories on Table & Pedestals */}
+          {/* Photorealistic Volumetric Cutout Objects on Table & Pedestals */}
           {pedestalProducts.map((prod) => {
             const anchorPos = DISPLAY_FIXTURE_ANCHORS[prod.placement];
             const rotY =
               prod.placement === 'right_pedestal'
-                ? -0.46
+                ? -0.38
                 : prod.placement === 'left_pedestal'
-                  ? 0.44
-                  : -0.22;
+                  ? 0.36
+                  : -0.18;
             return (
-              <PedestalProduct3D
+              <PhotorealObjectStand3D
                 key={prod.id}
                 spec={prod}
                 position={anchorPos}
@@ -611,7 +738,7 @@ export default function App() {
                 accentColor={activeConfig.palette.accent}
                 palette={activeConfig.palette}
                 selected={selectedGarmentId === prod.id}
-                onSelect={(s) => setSelectedGarmentId(s.id)}
+                onSelect={(s) => handleOpenProductShowcase(s.id)}
               />
             );
           })}
@@ -624,7 +751,7 @@ export default function App() {
               povMode={povMode}
               onPovModeChange={setPovMode}
               showSecondaryRack={secondaryRackItems.length > 0}
-              onInteractGarment={(gid) => setSelectedGarmentId(gid)}
+              onInteractGarment={(gid) => handleOpenProductShowcase(gid)}
             />
           )}
 
@@ -640,6 +767,18 @@ export default function App() {
           )}
         </BoutiqueWorld>
       </Canvas>
+
+      {/* `gemini-nano-banana-2.1` Commercial 3D Studio Product Render Showcase ("For Sale") */}
+      <StudioProductModal
+        product={activeStudioModalProduct}
+        storeConfig={activeConfig}
+        onClose={() => setStudioModalProductId(null)}
+        onApplyCutoutTo3D={handleApplyStudioCutoutTo3D}
+        onAddToBag={(pid) => {
+          setSelectedGarmentId(pid);
+          setStudioModalProductId(null);
+        }}
+      />
 
       {/* Drag-and-Drop Fullscreen Overlay */}
       {isDraggingFile && (
@@ -672,7 +811,7 @@ export default function App() {
 
       {!init.hideHud && (
         <>
-          {/* Top-Center URL -> Theme -> 3D World & Product Line Generator */}
+          {/* Top-Center URL -> Initial Photos -> Real Internet Products -> 3D Shop */}
           <UrlIngestBar
             onIngestComplete={handleIngestComplete}
             cutoutTolerance={tuning.cutoutTolerance}
@@ -737,7 +876,7 @@ export default function App() {
                 }}
               >
                 {activeConfig.products
-                  ? `${activeConfig.products.length} Custom 3D Products · ${activeConfig.vibe}`
+                  ? `${activeConfig.products.length} Matched Products · ${activeConfig.vibe}`
                   : activeConfig.vibe}
               </div>
             </div>
@@ -784,7 +923,7 @@ export default function App() {
             </div>
           )}
 
-          {/* Bottom-Center Editorial Camera, Gallery Walkthrough & Silhouette Judges Bar */}
+          {/* Bottom-Center Editorial Camera, Studio Render Showcase, Walkthrough & Judges Bar */}
           <div
             style={{
               position: 'fixed',
@@ -836,6 +975,36 @@ export default function App() {
                 margin: '0 3px',
               }}
             />
+
+            {/* 1-Click Open 3D Studio Render Showcase ("For Sale" via Nano Banana 2.1) */}
+            <button
+              onClick={() => {
+                const fallbackId =
+                  selectedGarmentId ||
+                  activeConfig.racks[0]?.items[0]?.id ||
+                  activeConfig.products?.[0]?.id ||
+                  null;
+                if (fallbackId) setStudioModalProductId(fallbackId);
+              }}
+              style={{
+                border: '1px solid rgba(212, 175, 55, 0.55)',
+                cursor: 'pointer',
+                padding: '5px 11px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(212, 175, 55, 0.18)',
+                color: '#f7f4ec',
+                whiteSpace: 'nowrap',
+              }}
+              title="Click any product in 3D or click here to generate a commercial 3D studio product render for sale"
+            >
+              <Sparkles size={12} color="#e7c96b" />
+              3D Studio Render
+            </button>
 
             {/* Clean First-Person Gallery Walkthrough */}
             <button
@@ -901,7 +1070,7 @@ export default function App() {
             onFocusProduct={setSelectedGarmentId}
           />
 
-          {/* Top-Right Collapsible World & Studio Drawer (Collapsed by default so screen stays super clean!) */}
+          {/* Top-Right Collapsible World & Studio Drawer */}
           <div
             style={{
               position: 'fixed',
@@ -938,7 +1107,6 @@ export default function App() {
 
             {!hudCollapsed && (
               <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                {/* 4 Architectural World Archetypes */}
                 <div>
                   <div
                     style={{
@@ -1015,7 +1183,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Rack Merchandising Layout */}
                 <div>
                   <div
                     style={{
@@ -1066,7 +1233,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Custom Garment Cutout Upload */}
                 <div
                   onClick={() => fileInputRef.current?.click()}
                   style={{
@@ -1110,7 +1276,6 @@ export default function App() {
                   />
                 </div>
 
-                {/* Collapsible Cloth & Cutout Controls */}
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8 }}>
                   <button
                     onClick={() => setShowSliders((s) => !s)}
@@ -1129,7 +1294,7 @@ export default function App() {
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Sliders size={12} color="#d4af37" />
-                      Material & Drape Controls
+                      Cutout & Drape Controls
                     </span>
                     {showSliders ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                   </button>
@@ -1143,34 +1308,27 @@ export default function App() {
                         gap: 8,
                       }}
                     >
-                      <button
-                        onClick={() =>
-                          setTuning((p) => ({
-                            ...p,
-                            renderMode:
-                              p.renderMode === 'volumetric' ? 'naive_flat' : 'volumetric',
-                          }))
-                        }
-                        style={{
-                          padding: '5px 8px',
-                          borderRadius: 6,
-                          fontSize: 10.5,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          border: '1px solid rgba(255,255,255,0.15)',
-                          background: 'rgba(255,255,255,0.06)',
-                          color: '#f5f2eb',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 5,
-                        }}
-                      >
-                        <Sparkles size={11} color="#d4af37" />
-                        {tuning.renderMode === 'volumetric'
-                          ? 'Mode: 3D Volumetric Mesh'
-                          : 'Mode: Naive Flat Plane'}
-                      </button>
+                      <label style={{ fontSize: 11 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Cutout ΔE Tolerance</span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                            {tuning.cutoutTolerance}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={8}
+                          max={52}
+                          step={1}
+                          value={tuning.cutoutTolerance}
+                          onChange={(e) =>
+                            setTuning((p) => ({
+                              ...p,
+                              cutoutTolerance: Number(e.target.value),
+                            }))
+                          }
+                        />
+                      </label>
 
                       <label style={{ fontSize: 11 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>

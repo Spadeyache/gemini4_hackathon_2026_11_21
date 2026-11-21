@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ArrowRight,
   Box,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Globe,
+  Image as ImageIcon,
   Layers,
   Loader2,
   Sparkles,
@@ -21,9 +23,9 @@ import {
 } from './urlBrandIngest';
 
 export interface UrlIngestBarProps {
-  /** Invoked when the synthesized StoreConfig + invented 3D product line are ready */
+  /** Invoked when the synthesized StoreConfig + curated real internet product line are ready */
   onIngestComplete: (result: BrandWebsiteIngestResult) => void;
-  /** Perceptual CIELAB cutout tolerance passed if an explicit customCutoutUrl is present (default 24) */
+  /** Perceptual CIELAB cutout tolerance passed to browser garment normalization (default 24) */
   cutoutTolerance?: number;
   /** Placement style: floating top-center glassmorphic HUD bar (default) or inline block */
   variant?: 'floating' | 'inline';
@@ -68,9 +70,9 @@ const QUICK_TEST_BRANDS: readonly QuickBrandChip[] = [
 ];
 
 const PROGRESS_STEPS: ReadonlyArray<{ stepNumber: 1 | 2 | 3; title: string }> = [
-  { stepNumber: 1, title: '1. Analyzing Website Identity & Ethos...' },
-  { stepNumber: 2, title: '2. Designing Store Theme & Product Line...' },
-  { stepNumber: 3, title: '3. Building 3D World & Merchandising Fixtures...' },
+  { stepNumber: 1, title: '1. Extracting Initial Website Photos & Visual Vibe...' },
+  { stepNumber: 2, title: '2. Matching Real Internet Products via Decision 1...' },
+  { stepNumber: 3, title: '3. Rendering 3D Cutout Garments & Store Fixtures...' },
 ];
 
 export function UrlIngestBar({
@@ -85,6 +87,7 @@ export function UrlIngestBar({
   const [isIngesting, setIsIngesting] = useState<boolean>(false);
   const [progress, setProgress] = useState<IngestProgressUpdate | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [failedThumbs, setFailedThumbs] = useState<Record<string, boolean>>({});
   const [themeBrief, setThemeBrief] = useState<{
     summary: BrandIngestSummary;
     swatches: string[];
@@ -125,11 +128,12 @@ export function UrlIngestBar({
 
       setErrorMessage(null);
       setThemeBrief(null);
+      setFailedThumbs({});
       setIsIngesting(true);
       setProgress({
         stage: 'analyzing_identity',
         stepNumber: 1,
-        label: '1. Analyzing Website Identity & Ethos...',
+        label: '1. Extracting Initial Website Photos & Visual Vibe...',
         detail: `Connecting to ${cleaned}...`,
       });
 
@@ -157,7 +161,7 @@ export function UrlIngestBar({
 
         briefTimerRef.current = window.setTimeout(() => {
           setThemeBrief(null);
-        }, 16000);
+        }, 22000);
       } catch (err) {
         if (controller.signal.aborted) return;
         setIsIngesting(false);
@@ -182,6 +186,16 @@ export function UrlIngestBar({
     void triggerIngest(chipUrl);
   };
 
+  const visibleInitialPhotos =
+    themeBrief?.summary.initialPhotoUrls
+      .filter((u) => Boolean(u) && !failedThumbs[u])
+      .slice(0, 2) ?? [];
+
+  const visibleProductThumbs =
+    themeBrief?.summary.matchedProductThumbUrls
+      .filter((u) => Boolean(u) && !failedThumbs[u])
+      .slice(0, 3) ?? [];
+
   const containerStyle: React.CSSProperties =
     variant === 'floating'
       ? {
@@ -190,7 +204,7 @@ export function UrlIngestBar({
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 25,
-          width: 'min(560px, calc(100vw - 620px))',
+          width: 'min(580px, calc(100vw - 620px))',
           minWidth: 350,
           display: 'flex',
           flexDirection: 'column',
@@ -349,7 +363,7 @@ export function UrlIngestBar({
                   size={13}
                   style={{ animation: 'urlIngestSpin 0.9s linear infinite' }}
                 />
-                <span>Designing World...</span>
+                <span>Curating Shop...</span>
               </>
             ) : (
               <>
@@ -391,7 +405,7 @@ export function UrlIngestBar({
                 disabled={isIngesting}
                 onClick={() => handleChipClick(chip.url)}
                 className="agy-ingest-chip"
-                title={`Design a bespoke ${chip.vibeHint} 3D flagship & 6-product line for ${chip.url}`}
+                title={`Curate a ${chip.vibeHint} 3D flagship with real internet products matched to ${chip.url}`}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -425,7 +439,7 @@ export function UrlIngestBar({
         )}
       </div>
 
-      {/* Step-by-Step Creative Director Pipeline Popover */}
+      {/* Step-by-Step Multimodal Curation Pipeline Popover */}
       {isIngesting && progress && (
         <div
           role="status"
@@ -516,19 +530,19 @@ export function UrlIngestBar({
         </div>
       )}
 
-      {/* Sleek Dismissible Brand Theme Brief Popover */}
+      {/* Sleek Dismissible Brand Theme Brief + "Matched from Initial Photos" Strip */}
       {!isIngesting && themeBrief && (
         <div
           role="region"
           aria-label="Brand Theme Brief"
           style={{
-            background: 'rgba(17, 19, 18, 0.90)',
+            background: 'rgba(17, 19, 18, 0.91)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
             border: '1px solid rgba(212, 175, 55, 0.36)',
             borderRadius: 12,
             padding: '10px 13px',
-            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.42)',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.44)',
             display: 'flex',
             flexDirection: 'column',
             gap: 7,
@@ -590,7 +604,7 @@ export function UrlIngestBar({
                 }}
               >
                 <Box size={10} />
-                {themeBrief.summary.inventedProductCount} 3D Products (
+                {themeBrief.summary.inventedProductCount} Real Products (
                 {(themeBrief.summary.elapsedMs / 1000).toFixed(1)}s)
               </span>
             </div>
@@ -629,14 +643,143 @@ export function UrlIngestBar({
             </div>
           </div>
 
+          {/* "Matched from Initial Photos" Multimodal Provenance Thumbnail Strip */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+              padding: '6px 9px',
+              borderRadius: 9,
+              background: 'rgba(255, 255, 255, 0.045)',
+              border: '1px solid rgba(212, 175, 55, 0.22)',
+            }}
+          >
+            {/* Left: Initial Website Photos */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              {visibleInitialPhotos.length > 0 ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {visibleInitialPhotos.map((src, idx) => (
+                    <img
+                      key={src}
+                      src={src}
+                      alt={`${themeBrief.summary.brandName} initial site photo ${idx + 1}`}
+                      onError={() => setFailedThumbs((prev) => ({ ...prev, [src]: true }))}
+                      style={{
+                        width: 36,
+                        height: 24,
+                        objectFit: 'cover',
+                        borderRadius: 5,
+                        border: '1px solid rgba(255, 255, 255, 0.28)',
+                        background: '#191a1d',
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <span
+                  style={{
+                    width: 26,
+                    height: 22,
+                    borderRadius: 5,
+                    background: `linear-gradient(135deg, ${themeBrief.swatches[0] || '#1e2026'} 0%, ${themeBrief.swatches[2] || '#d4af37'} 100%)`,
+                    border: '1px solid rgba(255, 255, 255, 0.26)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <ImageIcon size={11} color="#f7f4ec" />
+                </span>
+              )}
+
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: '0.03em',
+                  color: '#f3dfb0',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Matched from Initial Photos
+              </span>
+            </div>
+
+            <ArrowRight size={13} color="#d4af37" style={{ flexShrink: 0, opacity: 0.9 }} />
+
+            {/* Right: Curated Real Internet Product Packshot Thumbnails + Gemini 4 Label */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                minWidth: 0,
+                flex: 1,
+                justifyContent: 'flex-end',
+              }}
+            >
+              {visibleProductThumbs.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                  {visibleProductThumbs.map((src, idx) => (
+                    <img
+                      key={src}
+                      src={src}
+                      alt={`Curated product ${idx + 1}`}
+                      onError={() => setFailedThumbs((prev) => ({ ...prev, [src]: true }))}
+                      style={{
+                        width: 22,
+                        height: 22,
+                        objectFit: 'contain',
+                        borderRadius: 5,
+                        padding: 1,
+                        background: 'rgba(248, 246, 241, 0.92)',
+                        border: '1px solid rgba(212, 175, 55, 0.38)',
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 10.2,
+                    fontWeight: 600,
+                    color: '#e5f5de',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {themeBrief.summary.inventedProductCount} Real Internet Products Curated via Gemini 4 Neon + Decision 1
+                </div>
+                {themeBrief.summary.matchedStoreDomains.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: 9.2,
+                      color: 'rgba(245, 242, 235, 0.58)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    Live catalogs: {themeBrief.summary.matchedStoreDomains.slice(0, 4).join(' · ')}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Brand Ethos Creative Brief */}
           <div
             style={{
               fontSize: 11,
               lineHeight: 1.42,
               color: 'rgba(247, 244, 236, 0.88)',
-              paddingTop: 5,
-              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              paddingTop: 3,
             }}
           >
             {themeBrief.summary.brandEthos}

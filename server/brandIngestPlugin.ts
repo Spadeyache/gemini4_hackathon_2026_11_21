@@ -15,14 +15,26 @@ import type {
 
 export type IngestSourceType = 'shopify' | 'jsonld' | 'html_meta';
 
+export type AestheticClusterId =
+  | 'cinema_streetwear'
+  | 'minimal_tech'
+  | 'artisanal_cafe'
+  | 'heritage_club';
+
 export interface IngestUrlResponsePayload {
   storeConfig: StoreConfig;
   rawProductCount: number;
   sourceType: IngestSourceType;
   usedGemini: boolean;
+  usedDecision?: boolean;
+  initialPhotoUrls?: string[];
+  matchedStoreDomains?: string[];
+  aestheticCluster?: AestheticClusterId;
 }
 
 type MaterialFinish = NonNullable<InventedProductSpec['materialFinish']>;
+
+type SupportedVisionMimeType = 'image/jpeg' | 'image/png' | 'image/webp';
 
 type BrandSubVertical =
   | 'software_ai'
@@ -102,10 +114,102 @@ interface CreativeDirectorBlueprint {
   products: InventedProductSpec[];
 }
 
+interface DownloadedInitialPhoto {
+  originalUrl: string;
+  proxiedUrl: string;
+  base64: string;
+  mimeType: SupportedVisionMimeType;
+}
+
+interface ProductSearchKeywords {
+  apparel: string[];
+  objects: string[];
+  colorWords: string[];
+}
+
+interface NeonVisualBrandPlan {
+  brandName: string;
+  tagline: string;
+  vibe: string;
+  brandEthos: string;
+  archetype: WorldArchetypeId;
+  lightingPreset: LightingPreset;
+  metalRoughness: number;
+  metalness: number;
+  palette: StorePalette;
+  aestheticCluster: AestheticClusterId;
+  searchKeywords: ProductSearchKeywords;
+  architectNotes: string[];
+}
+
+interface ShopifyProductImageRaw {
+  id?: number | string;
+  src?: string;
+  url?: string;
+  alt?: string | null;
+  width?: number;
+  height?: number;
+  position?: number;
+}
+
+interface ShopifyJsonProduct {
+  id?: number | string;
+  title?: string;
+  handle?: string;
+  vendor?: string;
+  product_type?: string;
+  type?: string;
+  tags?: string[] | string;
+  images?: ShopifyProductImageRaw[];
+  image?: { src?: string; url?: string; width?: number; height?: number; alt?: string } | string;
+  featured_image?:
+    | { url?: string; src?: string; width?: number; height?: number; alt?: string }
+    | string;
+  price?: string | number;
+  price_min?: string | number;
+  variants?: Array<{
+    id?: number | string;
+    sku?: string;
+    price?: string | number;
+    available?: boolean;
+  }>;
+}
+
+interface RealInternetProductCandidate {
+  key: string;
+  domain: string;
+  vendorName: string;
+  title: string;
+  handle: string;
+  productType: string;
+  tags: string[];
+  price: number;
+  productUrl: string;
+  variantId?: string;
+  packshotUrl: string;
+  packshotScore: number;
+  kind: 'apparel' | 'object';
+  category: ProductCategory3D;
+  isFromInputDomain: boolean;
+  relevanceScore: number;
+  decisionProbability?: number;
+  decisionConfidence?: number;
+}
+
 interface CachedProxyImage {
   bytes: Uint8Array;
   contentType: string;
   cachedAt: number;
+}
+
+interface CachedDomainCatalog {
+  fetchedAt: number;
+  products: ShopifyJsonProduct[];
+}
+
+interface CachedNeonPlanEntry {
+  cachedAt: number;
+  plan: NeonVisualBrandPlan;
 }
 
 interface MinimalReq {
@@ -126,8 +230,15 @@ const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const IMAGE_CACHE = new Map<string, CachedProxyImage>();
-const MAX_IMAGE_CACHE_ENTRIES = 64;
+const MAX_IMAGE_CACHE_ENTRIES = 160;
 const IMAGE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+// 15-minute in-memory cache per Shopify domain / suggest query so repeat & demo runs take <100ms
+const INTERNET_CATALOG_CACHE = new Map<string, CachedDomainCatalog>();
+const INTERNET_SUGGEST_CACHE = new Map<string, CachedDomainCatalog>();
+const INTERNET_PRODUCT_HANDLE_CACHE = new Map<string, { fetchedAt: number; product: ShopifyJsonProduct | null }>();
+const NEON_VISUAL_PLAN_CACHE = new Map<string, CachedNeonPlanEntry>();
+const CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
 
 const VALID_LIGHTING_PRESETS: ReadonlySet<LightingPreset> = new Set<LightingPreset>([
   'warm_court_sunlight',
@@ -140,6 +251,13 @@ const VALID_ARCHETYPES: ReadonlySet<WorldArchetypeId> = new Set<WorldArchetypeId
   'minimalist_tech_pavilion',
   'warm_artisanal_atelier',
   'avant_garde_concrete_loft',
+]);
+
+const VALID_AESTHETIC_CLUSTERS: ReadonlySet<AestheticClusterId> = new Set<AestheticClusterId>([
+  'cinema_streetwear',
+  'minimal_tech',
+  'artisanal_cafe',
+  'heritage_club',
 ]);
 
 const HANGING_APPAREL_CATEGORIES: readonly ProductCategory3D[] = [
@@ -156,29 +274,83 @@ const PEDESTAL_OBJECT_CATEGORIES: readonly ProductCategory3D[] = [
   'apothecary_bottle',
 ];
 
-const VALID_APPAREL_SET: ReadonlySet<ProductCategory3D> = new Set(HANGING_APPAREL_CATEGORIES);
-const VALID_OBJECT_SET: ReadonlySet<ProductCategory3D> = new Set(PEDESTAL_OBJECT_CATEGORIES);
+interface CuratedShopifyStore {
+  domain: string;
+  vendorDisplay: string;
+}
 
-const VALID_MOTIFS: ReadonlySet<ProductGraphicMotif> = new Set<ProductGraphicMotif>([
-  'monogram_crest',
-  'geometric_grid',
-  'botanical_line',
-  'minimal_typo',
-  'archival_seal',
-  'orbital_rings',
-]);
+// Curated pools of live, active public Shopify stores verified for studio packshot photography
+const CLUSTER_SHOPIFY_STORES: Record<AestheticClusterId, readonly CuratedShopifyStore[]> = {
+  cinema_streetwear: [
+    { domain: 'actualsource.org', vendorDisplay: 'Actual Source' },
+    { domain: 'noahny.com', vendorDisplay: 'Noah NY' },
+    { domain: 'corridornyc.com', vendorDisplay: 'Corridor NYC' },
+    { domain: 'marketstudios.com', vendorDisplay: 'Market Studios' },
+    { domain: 'honorthegift.co', vendorDisplay: 'Honor The Gift' },
+    { domain: 'topodesigns.com', vendorDisplay: 'Topo Designs' },
+    { domain: 'onlyny.com', vendorDisplay: 'Only NY' },
+  ],
+  minimal_tech: [
+    { domain: 'kotn.com', vendorDisplay: 'Kotn' },
+    { domain: 'reigningchamp.com', vendorDisplay: 'Reigning Champ' },
+    { domain: 'ladywhiteco.com', vendorDisplay: 'Lady White Co.' },
+    { domain: 'kinto-usa.com', vendorDisplay: 'KINTO' },
+    { domain: 'fellowproducts.com', vendorDisplay: 'Fellow' },
+    { domain: 'ugmonk.com', vendorDisplay: 'Ugmonk' },
+    { domain: 'areaware.com', vendorDisplay: 'Areaware' },
+  ],
+  artisanal_cafe: [
+    { domain: 'fellowproducts.com', vendorDisplay: 'Fellow' },
+    { domain: 'kinto-usa.com', vendorDisplay: 'KINTO' },
+    { domain: 'malinandgoetz.com', vendorDisplay: 'Malin+Goetz' },
+    { domain: 'kotn.com', vendorDisplay: 'Kotn' },
+    { domain: 'taylorstitch.com', vendorDisplay: 'Taylor Stitch' },
+    { domain: 'ugmonk.com', vendorDisplay: 'Ugmonk' },
+    { domain: 'vervecoffee.com', vendorDisplay: 'Verve Coffee' },
+  ],
+  heritage_club: [
+    { domain: 'rowingblazers.com', vendorDisplay: 'Rowing Blazers' },
+    { domain: 'noahny.com', vendorDisplay: 'Noah NY' },
+    { domain: 'corridornyc.com', vendorDisplay: 'Corridor NYC' },
+    { domain: 'actualsource.org', vendorDisplay: 'Actual Source' },
+    { domain: 'ebbets.com', vendorDisplay: 'Ebbets Field Flannels' },
+    { domain: 'jpressonline.com', vendorDisplay: 'J. Press' },
+  ],
+};
 
-const VALID_FINISHES: ReadonlySet<MaterialFinish> = new Set<MaterialFinish>([
-  'combed_cotton',
-  'brushed_fleece',
-  'merino_knit',
-  'matte_stoneware',
-  'frosted_glass',
-  'heavy_canvas',
-]);
+const DEFAULT_CLUSTER_KEYWORDS: Record<AestheticClusterId, ProductSearchKeywords> = {
+  cinema_streetwear: {
+    apparel: ['hoodie', 'tee', 'jacket', 'sweatshirt'],
+    objects: ['book', 'hat', 'tote', 'vinyl'],
+    colorWords: ['black', 'charcoal', 'white', 'washed'],
+  },
+  minimal_tech: {
+    apparel: ['hoodie', 'tee', 'sweatshirt', 'overshirt'],
+    objects: ['mug', 'tote', 'tumbler', 'book'],
+    colorWords: ['black', 'slate', 'charcoal', 'white', 'grey'],
+  },
+  artisanal_cafe: {
+    apparel: ['shirt', 'hoodie', 'sweater', 'jacket'],
+    objects: ['mug', 'candle', 'tote', 'carafe'],
+    colorWords: ['natural', 'cream', 'matte', 'sage', 'sand'],
+  },
+  heritage_club: {
+    apparel: ['sweater', 'rugby', 'blazer', 'hoodie'],
+    objects: ['book', 'cap', 'tote', 'mug'],
+    colorWords: ['navy', 'forest', 'cream', 'burgundy'],
+  },
+};
 
 const EXCLUDED_PRODUCT_RE =
-  /\b(gift[-_ ]?card|e-gift|shipping[-_ ]?protection|package[-_ ]?protection|navidium|corso|route[-_ ]?protect|donation|mystery[-_ ]?box|warranty|digital[-_ ]?download)\b/i;
+  /\b(gift[-_ ]?card|e-gift|shipping[-_ ]?protection|package[-_ ]?protection|navidium|corso|route[-_ ]?protect|donation|mystery[-_ ]?box|warranty|digital[-_ ]?download|replacement|spare[-_ ]?part|paper[-_ ]?filter|filters[-_ ]?pack|sticker|keychain|lapel[-_ ]?pin|enamel[-_ ]?pin)\b/i;
+
+// Strictly exclude lower-body bottoms, socks, underwear, footwear, and non-hanging items from apparel racks
+const STRICT_NON_UPPER_APPAREL_RE =
+  /\b(pant|pants|trouser|trousers|chino|jean|jeans|short|shorts|boardshort|trunk|trunks|brief|briefs|boxer|boxers|underwear|bra|bralette|bikini|swimsuit|legging|leggings|tight|tights|jogger|joggers|sweatpant|sweatpants|skirt|skort|dress|gown|jumpsuit|romper|overall|overalls|sock|socks|anklet|shoe|shoes|sneaker|sneakers|boot|boots|loafer|loafers|mule|sandal|slipper|belt|scarf|bandana|glove|gloves|mitten|beanie|hat|cap|ballcap|visor|beret|bucket[-_ ]?hat|tote|bag|backpack|duffel|pack|pouch|wallet|cardholder|mug|cup|tumbler|kettle|carafe|bottle|candle|fragrance|perfume|cleanser|serum|wash|lotion|balm|soap|deodorant|acne|book|zine|magazine|journal|notebook|vinyl|cassette|throw|blanket|towel|pillow|cushion|rug|mat|umbrella|watch|sunglass|sunglasses|eyeglasses)\b/i;
+
+// Strictly exclude clothing & footwear when classifying table/pedestal hard-goods & accessories
+const STRICT_CLOTHING_FOR_OBJECTS_RE =
+  /\b(hoodie|sweatshirt|crewneck|pullover|sweater|cardigan|jacket|blazer|coat|parka|anorak|overshirt|vest|tee|t-shirt|tshirt|shirt|polo|henley|jersey|tank|pant|pants|trouser|trousers|jean|jeans|short|shorts|sweatpant|jogger|legging|skirt|dress|sock|socks|underwear|boxer|brief|bra|shoe|shoes|sneaker|boot|loafer|sandal|throw|blanket|pajama)\b/i;
 
 const BOT_CHALLENGE_TITLE_RE =
   /\b(just a moment|attention required|access denied|403 forbidden|404 not found|page not found|security check|ddos[- ]?guard|verify you are human|are you a robot|pardon our interruption|sucuri website firewall)\b/i;
@@ -190,97 +362,17 @@ const GENERIC_NAV_STOP_RE =
   /^(home|login|log in|sign in|sign up|register|get started|start now|try free|contact|contact us|support|help|faq|search|menu|close|cart|bag|checkout|account|privacy|terms|legal|sitemap|skip|back|next|more|view all|learn more|read more|pricing|product|products|solutions|resources|enterprise|customers|company|careers|jobs|blog|blogs|news|news releases|press|events|docs|documentation|developers|status|security|partners|integrations|download|mobile|live|podcasts|videos|multimedia)$/i;
 
 const GENERIC_PHRASE_STOPWORDS = new Set([
-  'the',
-  'and',
-  'for',
-  'with',
-  'from',
-  'that',
-  'this',
-  'your',
-  'our',
-  'into',
-  'over',
-  'under',
-  'more',
-  'most',
-  'best',
-  'new',
-  'now',
-  'how',
-  'why',
-  'what',
-  'when',
-  'where',
-  'who',
-  'all',
-  'any',
-  'every',
-  'built',
-  'make',
-  'made',
-  'get',
-  'use',
-  'using',
-  'learn',
-  'read',
-  'view',
-  'shop',
-  'store',
-  'buy',
-  'free',
-  'try',
-  'start',
-  'started',
-  'welcome',
-  'official',
-  'website',
-  'online',
-  'page',
-  'home',
-  'click',
-  'here',
-  'join',
-  'today',
-  'discover',
-  'explore',
-  'about',
-  'contact',
-  'login',
-  'signup',
-  'subscribe',
-  'cookie',
-  'privacy',
-  'pricing',
-  'product',
-  'products',
-  'customers',
-  'company',
-  'careers',
-  'blog',
-  'blogs',
-  'news',
-  'releases',
-  'solutions',
-  'resources',
-  'enterprise',
-  'features',
-  'tool',
-  'tools',
-  'platform',
-  'search',
-  'searches',
-  'suggested',
-  'filter',
-  'filters',
-  'results',
-  'menu',
-  'navigation',
-  'account',
-  'checkout',
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'your', 'our', 'into', 'over', 'under',
+  'more', 'most', 'best', 'new', 'now', 'how', 'why', 'what', 'when', 'where', 'who', 'all',
+  'any', 'every', 'built', 'make', 'made', 'get', 'use', 'using', 'learn', 'read', 'view',
+  'shop', 'store', 'buy', 'free', 'try', 'start', 'started', 'welcome', 'official', 'website',
+  'online', 'page', 'home', 'click', 'here', 'join', 'today', 'discover', 'explore', 'about',
+  'contact', 'login', 'signup', 'subscribe', 'cookie', 'privacy', 'pricing', 'product', 'products',
+  'customers', 'company', 'careers', 'blog', 'blogs', 'news', 'releases', 'solutions', 'resources',
+  'enterprise', 'features', 'tool', 'tools', 'platform', 'search', 'searches', 'suggested',
+  'filter', 'filters', 'results', 'menu', 'navigation', 'account', 'checkout',
 ]);
 
-// Known compound brand domain normalizations so blocked/minimal SPA responses still yield crisp display names
 const DOMAIN_BRAND_DISPLAY_OVERRIDES: Record<string, string> = {
   bluebottlecoffee: 'BLUE BOTTLE COFFEE',
   rowingblazers: 'ROWING BLAZERS',
@@ -303,7 +395,6 @@ const DOMAIN_BRAND_DISPLAY_OVERRIDES: Record<string, string> = {
   counterculturecoffee: 'COUNTER CULTURE',
 };
 
-// Domain-authentic fallback brand hex accents when a site serves external/obfuscated or 403 CSS
 const KNOWN_DOMAIN_BRAND_COLORS: Record<string, { primary: string; bg?: string; isDark?: boolean }> = {
   linear: { primary: '#5E6AD2', bg: '#08090A', isDark: true },
   stripe: { primary: '#635BFF', bg: '#0A2540', isDark: false },
@@ -384,6 +475,23 @@ function normalizeExternalUrl(rawInput: string): URL {
   }
 
   return parsed;
+}
+
+function toProxiedImageUrl(externalUrl: string): string {
+  return `/api/proxy-image?url=${encodeURIComponent(externalUrl)}`;
+}
+
+function putInImageCache(url: string, bytes: Uint8Array, contentType: string): void {
+  if (bytes.byteLength === 0 || bytes.byteLength > 4 * 1024 * 1024) return;
+  if (!IMAGE_CACHE.has(url) && IMAGE_CACHE.size >= MAX_IMAGE_CACHE_ENTRIES) {
+    const oldestKey = IMAGE_CACHE.keys().next().value;
+    if (oldestKey) IMAGE_CACHE.delete(oldestKey);
+  }
+  IMAGE_CACHE.set(url, {
+    bytes,
+    contentType,
+    cachedAt: Date.now(),
+  });
 }
 
 function decodeHtmlEntities(input: string): string {
@@ -595,10 +703,6 @@ function mixHex(hexA: string, hexB: string, weightB: number): string {
   return rgbToHex(r1 * (1 - w) + r2 * w, g1 * (1 - w) + g2 * w, b1 * (1 - w) + b2 * w);
 }
 
-/**
- * Ensures foreground/accent hex meets WCAG contrast ratio against a background hex
- * while preserving the brand color's authentic hue & saturation.
- */
 function ensureWcagContrast(fgHex: string, bgHex: string, minRatio = 3.2): string {
   const cleanFg = normalizeHexColor(fgHex) ?? '#D4AF37';
   const cleanBg = normalizeHexColor(bgHex) ?? '#17191E';
@@ -614,7 +718,6 @@ function ensureWcagContrast(fgHex: string, bgHex: string, minRatio = 3.2): strin
   for (let step = 1; step <= 18; step++) {
     const candidate = mixHex(cleanFg, targetPole, step / 18);
     if (wcagContrastRatio(candidate, cleanBg) >= minRatio) {
-      // Preserve a hint of original hue if saturation collapsed near pole
       if (fgMetrics.sat > 0.25 && getColorMetrics(candidate).sat < 0.12) {
         const [r, g, b] = hslToRgb(fgMetrics.hue, 48, brighten ? 78 : 22);
         const vividCandidate = rgbToHex(r, g, b);
@@ -646,6 +749,306 @@ function extractMetaTag(html: string, attrValuePattern: string): string {
 
   return '';
 }
+
+// ============================================================================
+// 1. INITIAL WEBSITE PHOTO EXTRACTION & MULTIMODAL DOWNLOADER
+// ============================================================================
+
+function normalizeSitePhotoCandidateUrl(rawSrc: string, baseOrigin: string): string | null {
+  const decoded = decodeHtmlEntities(rawSrc).trim();
+  if (!decoded || decoded.startsWith('data:') || decoded.startsWith('blob:')) {
+    return null;
+  }
+
+  let resolved: URL;
+  try {
+    resolved = new URL(decoded.startsWith('//') ? `https:${decoded}` : decoded, baseOrigin);
+  } catch {
+    return null;
+  }
+
+  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+    return null;
+  }
+  if (isDisallowedHost(resolved.hostname)) {
+    return null;
+  }
+
+  // Upgrade http -> https for public CDN assets
+  if (resolved.protocol === 'http:') {
+    resolved.protocol = 'https:';
+  }
+
+  const lowerPath = resolved.pathname.toLowerCase();
+  if (/\.(svg|ico|gif|avif|mp4|webm|woff2?)(\?|$)/i.test(lowerPath)) {
+    return null;
+  }
+  if (
+    /\b(favicon|apple-touch-icon|sprite|spacer|pixel|tracker|analytics|1x1|badge|payment|arrow|chevron|spinner|loader)\b/i.test(
+      `${resolved.pathname} ${resolved.search}`
+    )
+  ) {
+    return null;
+  }
+
+  // Unwrap Next.js `/_next/image?url=...` when wrapping an external HTTPS asset, or cap width to 1080
+  if (resolved.pathname.startsWith('/_next/image')) {
+    const innerUrl = resolved.searchParams.get('url');
+    if (innerUrl && /^https?:\/\//i.test(innerUrl)) {
+      try {
+        const innerParsed = new URL(innerUrl);
+        if (!isDisallowedHost(innerParsed.hostname)) {
+          return innerParsed.toString();
+        }
+      } catch {
+        // Keep Next.js optimizer URL below
+      }
+    }
+    const wParam = Number(resolved.searchParams.get('w') ?? '0');
+    if (wParam > 1200) {
+      resolved.searchParams.set('w', '1080');
+    }
+    return resolved.toString();
+  }
+
+  // Upgrade tiny blur-up placeholders (`&width=20`) on Shopify / modern CDNs
+  const widthQuery = Number(resolved.searchParams.get('width') ?? '0');
+  if (widthQuery > 0 && widthQuery < 200) {
+    resolved.searchParams.set('width', '960');
+  } else if (widthQuery > 1400) {
+    resolved.searchParams.set('width', '1080');
+  }
+
+  // Cap Cloudflare Image Delivery width=2560 -> width=1080 for fast multimodal fetch
+  if (resolved.pathname.includes('/cdn-cgi/imagedelivery/')) {
+    resolved.pathname = resolved.pathname.replace(/width=\d+/i, 'width=1080');
+  }
+
+  return resolved.toString();
+}
+
+function pickBestSrcFromSrcset(srcsetRaw: string): string | null {
+  const entries = decodeHtmlEntities(srcsetRaw)
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  let bestUrl: string | null = null;
+  let bestScore = -1;
+
+  for (const entry of entries) {
+    const tokens = entry.split(/\s+/);
+    const urlPart = tokens[0];
+    if (!urlPart) continue;
+    const widthMatch = tokens[1]?.match(/^(\d+)w$/i);
+    const widthVal = widthMatch ? Number(widthMatch[1]) : 800;
+    if (widthVal < 220) continue;
+    // Prefer 640px..1280px crisp hero images without 4K download bloat
+    const score = widthVal >= 600 && widthVal <= 1400 ? 1000 - Math.abs(960 - widthVal) : 400;
+    if (score > bestScore) {
+      bestScore = score;
+      bestUrl = urlPart;
+    }
+  }
+
+  return bestUrl;
+}
+
+/**
+ * Extracts 1 to 3 best initial visual/brand photos from the input website's HTML
+ * (`og:image`, `twitter:image`, and hero `<img src>` >200px that aren't icons/SVGs/avatars).
+ */
+function extractInitialWebsitePhotoUrls(
+  html: string,
+  baseOrigin: string,
+  fallbackShopifyProducts: ShopifyJsonProduct[] = []
+): string[] {
+  const collected: string[] = [];
+  const seenKeys = new Set<string>();
+
+  const pushCandidate = (rawUrl: string | null | undefined) => {
+    if (!rawUrl || collected.length >= 5) return;
+    const normalized = normalizeSitePhotoCandidateUrl(rawUrl, baseOrigin);
+    if (!normalized) return;
+    const dedupeKey = normalized.replace(/\?.*$/, '');
+    if (seenKeys.has(dedupeKey) || seenKeys.has(normalized)) return;
+    seenKeys.add(dedupeKey);
+    seenKeys.add(normalized);
+    collected.push(normalized);
+  };
+
+  if (html) {
+    // 1. Primary OpenGraph & Twitter card visual brand imagery
+    const ogSecure = extractMetaTag(html, 'og:image:secure_url');
+    const ogImage = extractMetaTag(html, 'og:image');
+    const twitterImage = extractMetaTag(html, 'twitter:image|twitter:image:src');
+    pushCandidate(ogSecure);
+    pushCandidate(ogImage);
+    pushCandidate(twitterImage);
+
+    // 2. Hero <img> tags >200px (skipping hidden elements, tiny avatars, nav icons, and SVGs)
+    const imgTagRe = /<img\b[^>]*>/gi;
+    let match: RegExpExecArray | null;
+    let scanned = 0;
+
+    while ((match = imgTagRe.exec(html)) !== null && scanned < 45 && collected.length < 5) {
+      scanned++;
+      const tag = match[0];
+
+      if (/\bdisplay\s*:\s*none\b/i.test(tag)) continue;
+
+      const alt = tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? '';
+      const cls = tag.match(/\bclass=["']([^"']*)["']/i)?.[1] ?? '';
+      if (/\b(avatar|icon|logo|arrow|Flag|badge|payment|emoji|spinner)\b/i.test(`${alt} ${cls}`)) {
+        continue;
+      }
+
+      const widthAttr = Number(tag.match(/\bwidth=["']?(\d+)["']?/i)?.[1] ?? '0');
+      const heightAttr = Number(tag.match(/\bheight=["']?(\d+)["']?/i)?.[1] ?? '0');
+      const styleWidth = Number(tag.match(/\bwidth\s*:\s*(\d+)px/i)?.[1] ?? '0');
+
+      if (
+        (widthAttr > 0 && widthAttr <= 200) ||
+        (heightAttr > 0 && heightAttr <= 160) ||
+        (styleWidth > 0 && styleWidth <= 200)
+      ) {
+        continue;
+      }
+
+      const srcsetRaw =
+        tag.match(/\b(?:srcset|data-srcset)=["']([^"']+)["']/i)?.[1] ?? '';
+      const srcFromSet = srcsetRaw ? pickBestSrcFromSrcset(srcsetRaw) : null;
+      const directSrc =
+        tag.match(/\b(?:data-src|src)=["']([^"']+)["']/i)?.[1] ?? null;
+
+      // Prefer a clean 640-1200w srcset entry when direct src is a 20px blur-up or 3840px giant
+      const chosenRaw = srcFromSet ?? directSrc;
+      if (!chosenRaw) continue;
+
+      // Require explicit >200px dimensions OR known hero/media class/srcset so tiny 16px icons never slip in
+      const hasHeroSignal =
+        widthAttr > 200 ||
+        heightAttr > 200 ||
+        Boolean(srcFromSet) ||
+        /\b(hero|banner|media|poster|cover|feature|editorial|lookbook|gallery)\b/i.test(
+          `${cls} ${chosenRaw}`
+        );
+
+      if (hasHeroSignal) {
+        pushCandidate(chosenRaw);
+      }
+    }
+  }
+
+  // 3. Fallback to input store's own featured product photos if HTML blocked scraping
+  if (collected.length === 0 && fallbackShopifyProducts.length > 0) {
+    for (const prod of fallbackShopifyProducts.slice(0, 3)) {
+      const bestShot = pickCleanestPackshotImage(extractProductImagesList(prod));
+      if (bestShot) {
+        pushCandidate(bestShot.url);
+      }
+      if (collected.length >= 2) break;
+    }
+  }
+
+  return collected.slice(0, 3);
+}
+
+function sniffSupportedVisionMime(
+  bytes: Uint8Array,
+  headerContentType: string
+): SupportedVisionMimeType | null {
+  const lowerCt = headerContentType.toLowerCase();
+  if (lowerCt.includes('image/jpeg') || lowerCt.includes('image/jpg')) return 'image/jpeg';
+  if (lowerCt.includes('image/png')) return 'image/png';
+  if (lowerCt.includes('image/webp')) return 'image/webp';
+
+  if (bytes.byteLength >= 12) {
+    // JPEG magic: FF D8 FF
+    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    // PNG magic: 89 50 4E 47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+      return 'image/png';
+    }
+    // WEBP magic: "RIFF" .... "WEBP"
+    if (
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    ) {
+      return 'image/webp';
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Downloads up to 2 initial website photos (`<= 1.5s` timeout) into base64 for `gemini-4-neon`
+ * and warms `IMAGE_CACHE` so `/api/proxy-image` serves them to the browser HUD instantly.
+ */
+async function downloadInitialPhotosForVision(
+  candidateUrls: string[],
+  timeoutMs = 1500
+): Promise<DownloadedInitialPhoto[]> {
+  if (candidateUrls.length === 0) return [];
+
+  const attempts = await Promise.all(
+    candidateUrls.slice(0, 3).map(async (photoUrl): Promise<DownloadedInitialPhoto | null> => {
+      try {
+        const parsed = new URL(photoUrl);
+        const res = await fetch(photoUrl, {
+          headers: {
+            'User-Agent': BROWSER_USER_AGENT,
+            // Explicitly omit image/avif so CDNs (Cloudflare/Shopify/Next) serve webp/jpeg/png
+            Accept: 'image/jpeg,image/png,image/webp;q=0.95,*/*;q=0.4',
+            Referer: `${parsed.origin}/`,
+          },
+          redirect: 'follow',
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        if (!res.ok) return null;
+
+        const ct = res.headers.get('content-type') ?? '';
+        if (ct.toLowerCase().includes('text/html') || ct.toLowerCase().includes('image/svg')) {
+          return null;
+        }
+
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        if (bytes.byteLength < 400 || bytes.byteLength > 3.5 * 1024 * 1024) {
+          return null;
+        }
+
+        const mimeType = sniffSupportedVisionMime(bytes, ct);
+        if (!mimeType) return null;
+
+        putInImageCache(photoUrl, bytes, mimeType);
+
+        return {
+          originalUrl: photoUrl,
+          proxiedUrl: toProxiedImageUrl(photoUrl),
+          base64: Buffer.from(bytes).toString('base64'),
+          mimeType,
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return attempts.filter((p): p is DownloadedInitialPhoto => p !== null).slice(0, 2);
+}
+
+// ============================================================================
+// 2. BRAND IDENTITY, COLOR EXTRACTION & DETERMINISTIC BASELINE
+// ============================================================================
 
 function parseHostnameParts(url: URL): { hostname: string; domainRoot: string; tld: string; subdomain?: string } {
   const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
@@ -749,7 +1152,6 @@ function deriveCleanBrandName(
       );
 
     if (segments.length > 0) {
-      // Strongly prefer the title segment whose alphanumeric stem matches domainRoot
       const domainMatched = segments.find((seg) => {
         const stem = seg.toLowerCase().replace(/[^a-z0-9]/g, '');
         return stem.length >= 2 && (cleanKey.includes(stem) || stem.includes(cleanKey));
@@ -757,7 +1159,6 @@ function deriveCleanBrandName(
       if (domainMatched) {
         return domainMatched.toUpperCase();
       }
-      // Otherwise take first concise segment (often "Linear – Plan and build products")
       if (segments[0].split(/\s+/).length <= 4) {
         return segments[0].toUpperCase();
       }
@@ -802,10 +1203,6 @@ function deriveBrandMonogram(brandName: string): string {
   return word.slice(0, 3);
 }
 
-/**
- * Deeply extracts CSS custom properties (--*), <meta name="theme-color">, SVG logo fills/strokes,
- * and background/accent colors, separating dark vs. light website themes and vibrant vs. muted accents.
- */
 function extractDeepColorProfile(
   html: string,
   extraStylesheetCss: string,
@@ -842,7 +1239,6 @@ function extractDeepColorProfile(
     addScore(tileColor, 26);
   }
 
-  // 1. Extract SVG fill & stroke brand colors from inline logos/icons (first 24 SVGs)
   const svgRe = /<svg\b[\s\S]*?<\/svg>/gi;
   let svgMatch: RegExpExecArray | null;
   let svgCount = 0;
@@ -861,7 +1257,6 @@ function extractDeepColorProfile(
     }
   }
 
-  // 2. Combine inline <style> blocks + style="..." attributes + optional external stylesheet
   const styleBlocks: string[] = [];
   const styleBlockRe = /<style[^>]*>([\s\S]*?)<\/style>/gi;
   let sm: RegExpExecArray | null;
@@ -883,7 +1278,6 @@ function extractDeepColorProfile(
 
   const combinedCss = styleBlocks.join('\n');
 
-  // 3. Authentic CSS custom properties (--*)
   const cssVarRe = /(--[a-zA-Z0-9-_]{2,48})\s*:\s*([^;}{"\n]{3,42})/g;
   let vm: RegExpExecArray | null;
   let varScanned = 0;
@@ -893,7 +1287,6 @@ function extractDeepColorProfile(
     const hex = normalizeCssColorToken(vm[2]);
     if (!hex) continue;
 
-    // Ignore generic form-validation utility colors unless explicitly named brand/primary
     if (/^--(error|danger|destructive|warn|warning|alert|invalid|success|toast|diff)/.test(propName)) {
       continue;
     }
@@ -912,7 +1305,6 @@ function extractDeepColorProfile(
     }
   }
 
-  // 4. Explicit html/body background-color declarations for accurate dark vs. light detection
   const bodyBgRe = /(?:html|body|:root)\s*\{[^}]{0,600}?(?:background-color|background)\s*:\s*([^;}{"\n]{3,36})/gi;
   let bbm: RegExpExecArray | null;
   while ((bbm = bodyBgRe.exec(combinedCss)) !== null) {
@@ -923,7 +1315,6 @@ function extractDeepColorProfile(
     }
   }
 
-  // 5. General CSS color declarations
   const anyHexRe = /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g;
   let hm: RegExpExecArray | null;
   let hexCount = 0;
@@ -933,7 +1324,6 @@ function extractDeepColorProfile(
     addScore(`#${hm[1]}`, 2);
   }
 
-  // 6. Enrich with domain-known brand palette ONLY when page returned empty/minimal styles
   const knownDomain = KNOWN_DOMAIN_BRAND_COLORS[domainRoot.toLowerCase()];
   if (knownDomain && brandScores.size < 3) {
     addScore(knownDomain.primary, 42);
@@ -982,7 +1372,6 @@ function extractDeepColorProfile(
 
   const chromaticSvgBrand = svgBrandColors.find((h) => getColorMetrics(h).sat >= 0.2);
 
-  // Detect dark vs. light website polarity from HTML class/attributes, color-scheme meta, or primary bg hint
   const colorSchemeMeta = extractMetaTag(html, 'color-scheme').toLowerCase();
   const htmlOpenTag = html.slice(0, 2500);
   const explicitDarkAttr =
@@ -1039,7 +1428,6 @@ function extractHeadlinesAndCopy(html: string): {
     return { headlines, manifestoSentences, navLabels, jsonLdInspirations };
   }
 
-  // 1. Extract <h1> & <h2> hero headlines
   const headingRe = /<h([12])\b[^>]*>([\s\S]{2,900}?)<\/h\1>/gi;
   let hm: RegExpExecArray | null;
   while ((hm = headingRe.exec(html)) !== null && headlines.length < 10) {
@@ -1051,7 +1439,6 @@ function extractHeadlinesAndCopy(html: string): {
     }
   }
 
-  // 2. Extract key manifesto sentences from <p> & <blockquote>
   const paraRe = /<(?:p|blockquote)\b[^>]*>([\s\S]{20,1100}?)<\/(?:p|blockquote)>/gi;
   let pm: RegExpExecArray | null;
   let paraScanned = 0;
@@ -1066,7 +1453,6 @@ function extractHeadlinesAndCopy(html: string): {
     }
   }
 
-  // 3. Extract navigation section labels from <nav> or <header>
   const navRegions: string[] = [];
   const navBlockRe = /<(?:nav|header)\b[^>]*>([\s\S]{10,18000}?)<\/(?:nav|header)>/gi;
   let nm: RegExpExecArray | null;
@@ -1087,7 +1473,6 @@ function extractHeadlinesAndCopy(html: string): {
     }
   }
 
-  // 4. Extract JSON-LD Organization/WebSite name & optional Product inspirations (no raw images!)
   const ldRe = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let ldm: RegExpExecArray | null;
   const visitLd = (node: unknown) => {
@@ -1152,49 +1537,40 @@ function extractHeadlinesAndCopy(html: string): {
   };
 }
 
-interface ShopifyJsonProduct {
-  id?: number | string;
-  title?: string;
-  handle?: string;
-  vendor?: string;
-  product_type?: string;
-  tags?: string[] | string;
-  variants?: Array<{
-    id?: number | string;
-    sku?: string;
-    price?: string | number;
-  }>;
+function extractRawShopifyProductArray(payload: unknown): ShopifyJsonProduct[] {
+  if (!payload || typeof payload !== 'object') return [];
+  const obj = payload as {
+    products?: unknown;
+    product?: unknown;
+    resources?: { results?: { products?: unknown } };
+  };
+  if (Array.isArray(obj.products)) {
+    return obj.products as ShopifyJsonProduct[];
+  }
+  if (obj.product && typeof obj.product === 'object') {
+    return [obj.product as ShopifyJsonProduct];
+  }
+  if (Array.isArray(obj.resources?.results?.products)) {
+    return obj.resources.results.products as ShopifyJsonProduct[];
+  }
+  return [];
 }
 
 function parseShopifyCatalogInspirations(
   payload: unknown,
   effectiveOrigin: string
 ): RealCatalogInspiration[] {
-  if (!payload || typeof payload !== 'object') return [];
-  const obj = payload as { products?: unknown; product?: unknown };
-  const rawList: ShopifyJsonProduct[] = Array.isArray(obj.products)
-    ? (obj.products as ShopifyJsonProduct[])
-    : obj.product && typeof obj.product === 'object'
-      ? [obj.product as ShopifyJsonProduct]
-      : [];
-
+  const rawList = extractRawShopifyProductArray(payload);
   const inspirations: RealCatalogInspiration[] = [];
   for (const p of rawList) {
     if (inspirations.length >= 16) break;
     const title = decodeHtmlEntities(String(p.title ?? '').trim());
     if (!title || EXCLUDED_PRODUCT_RE.test(title)) continue;
     const handle = String(p.handle ?? slugify(title)).trim();
-    const productType = decodeHtmlEntities(String(p.product_type ?? '').trim());
-    const tags = Array.isArray(p.tags)
-      ? p.tags.map((t) => String(t).trim()).filter(Boolean)
-      : typeof p.tags === 'string'
-        ? p.tags
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : [];
+    const productType = decodeHtmlEntities(String(p.product_type ?? p.type ?? '').trim());
+    const tags = normalizeProductTags(p.tags);
     const firstVariant = Array.isArray(p.variants) && p.variants.length > 0 ? p.variants[0] : undefined;
-    const price = parsePriceNumber(firstVariant?.price, 85);
+    const price = parsePriceNumber(firstVariant?.price ?? p.price ?? p.price_min, 85);
     const vendor = p.vendor ? decodeHtmlEntities(String(p.vendor).trim()) : undefined;
 
     inspirations.push({
@@ -1220,10 +1596,6 @@ function toTitleCase(phrase: string): string {
     .join(' ');
 }
 
-/**
- * Extracts evocative 1–2 word nouns/concepts and <=16-char graphic copy directly from
- * the website's <h1>/<h2> headlines, nav labels, and manifesto sentences.
- */
 function extractBrandVocabulary(
   brandName: string,
   headlines: string[],
@@ -1241,7 +1613,6 @@ function extractBrandVocabulary(
   const evocativeNouns: string[] = [];
   const graphicCopyCandidates: string[] = [];
 
-  // 1. Extract strong 1–2 word phrases from <h1>/<h2> hero headlines & description FIRST
   const textSources = [...headlines, description, ...manifestoSentences.slice(0, 3)];
   for (const line of textSources) {
     const clauses = line
@@ -1261,7 +1632,6 @@ function extractBrandVocabulary(
         const l1 = w1.toLowerCase();
         if (GENERIC_PHRASE_STOPWORDS.has(l1) || brandWords.has(l1)) continue;
 
-        // Try crisp 2-word compound if <= 16 chars
         if (i + 1 < words.length) {
           const w2 = words[i + 1];
           const l2 = w2.toLowerCase();
@@ -1291,7 +1661,6 @@ function extractBrandVocabulary(
     if (evocativeNouns.length >= 12) break;
   }
 
-  // 2. Supplement with curated distinctive nav section labels ("Changelog", "Single Origin", "Essays", "Method")
   for (const nav of navLabels) {
     const clean = nav.replace(/[^a-zA-Z0-9 &-]/g, '').trim();
     if (!clean || clean.length < 4 || clean.length > 18) continue;
@@ -1345,7 +1714,7 @@ function classifyVerticalAndArchetype(
     /\b(nasa|space|spacecraft|orbital|orbit|rocket|launch|astronaut|mars|lunar|moon|telescope|telemetry|aerospace|propulsion|jpl|artemis|satellite|cosmos)\b/g
   );
   const fintechHits = countHits(
-    /\b(stripe|payment|payments|billing|payout|treasury|fintech|ledger|banking|checkout|invoice|invoicing|financial infrastructure|merchant|capital)\b/g
+    /\b(stripe|payment|payments|payout|treasury|fintech|ledger|banking|invoice|invoicing|financial infrastructure|merchant|capital)\b/g
   );
   const softwareTechHits =
     countHits(
@@ -1389,7 +1758,6 @@ function classifyVerticalAndArchetype(
     countHits(/\b(portfolio|selected work|case studies|product designer|design engineer|creative director|personal site)\b/g) +
     (/^(me|design|studio|work)$/.test(tld) ? 2 : 0);
 
-  // Explicit sub-vertical lock for crisp thematic differentiation
   if (aerospaceHits >= 2 || domainRoot === 'nasa') {
     return { archetype: 'minimalist_tech_pavilion', subVertical: 'aerospace_science' };
   }
@@ -1465,10 +1833,27 @@ function classifyVerticalAndArchetype(
   };
 }
 
-/**
- * Synthesizes an archetype-grounded StorePalette while blending the website's actual scraped
- * CSS/SVG primary & background hex colors with strict WCAG contrast checks.
- */
+function mapArchetypeToAestheticCluster(
+  archetype: WorldArchetypeId,
+  subVertical: BrandSubVertical
+): AestheticClusterId {
+  if (
+    archetype === 'avant_garde_concrete_loft' ||
+    subVertical === 'film_cinema' ||
+    subVertical === 'music_audio' ||
+    subVertical === 'streetwear_drop'
+  ) {
+    return 'cinema_streetwear';
+  }
+  if (archetype === 'minimalist_tech_pavilion') {
+    return 'minimal_tech';
+  }
+  if (archetype === 'warm_artisanal_atelier') {
+    return 'artisanal_cafe';
+  }
+  return 'heritage_club';
+}
+
 function buildBrandBlendedPalette(
   archetype: WorldArchetypeId,
   identity: DeepWebsiteIdentity
@@ -1601,7 +1986,6 @@ function buildBrandBlendedPalette(
     };
   }
 
-  // 'heritage_arch_flagship'
   const baseWall = '#F1ECE1';
   const scrapedLight = colorProfile.lightBackgrounds[0];
   const wall = scrapedLight
@@ -1678,7 +2062,6 @@ function clampGraphicHeadline(raw: string | undefined, fallback: string): string
     .trim();
   if (!cleaned) return fallback.slice(0, 16);
   if (cleaned.length <= 16) return cleaned;
-  // Truncate cleanly on word boundary if possible
   const words = cleaned.split(' ');
   let acc = '';
   for (const w of words) {
@@ -1687,449 +2070,6 @@ function clampGraphicHeadline(raw: string | undefined, fallback: string): string
     else break;
   }
   return acc || cleaned.slice(0, 16).trim();
-}
-
-function matchShopifyInspirationForCategory(
-  category: ProductCategory3D,
-  inspirations: RealCatalogInspiration[],
-  usedHandles: Set<string>
-): RealCatalogInspiration | undefined {
-  if (inspirations.length === 0) return undefined;
-
-  const patterns: Record<ProductCategory3D, RegExp> = {
-    heavyweight_hoodie: /\b(hoodie|sweatshirt|fleece|pullover|crewneck)\b/i,
-    varsity_jacket: /\b(jacket|blazer|cardigan|coat|overshirt|rugby|sweater|knit)\b/i,
-    structured_tshirt: /\b(tee|t-shirt|shirt|polo|jersey|longsleeve|top)\b/i,
-    ceramic_mug: /\b(mug|cup|tumbler|dripper|carafe|ceramic|espresso)\b/i,
-    structured_cap: /\b(cap|hat|beanie|bucket|visor)\b/i,
-    canvas_tote: /\b(tote|bag|weekender|duffel|carryall|pouch)\b/i,
-    hardcover_book: /\b(book|journal|magazine|zine|guide|notebook|monograph)\b/i,
-    apothecary_bottle: /\b(bottle|cleanser|serum|oil|balm|fragrance|blend|beans|concentrate)\b/i,
-  };
-
-  const re = patterns[category];
-  const exact = inspirations.find(
-    (item) =>
-      !usedHandles.has(item.handle) && re.test(`${item.title} ${item.productType} ${item.tags.join(' ')}`)
-  );
-  if (exact) {
-    usedHandles.add(exact.handle);
-    return exact;
-  }
-
-  return undefined;
-}
-
-/**
- * Domain-adaptive Deterministic Creative Director & Merch Strategist (<5ms execution).
- * Produces an authentic spatial Brand Ethos, WorldArchetypeId, WCAG-verified palette,
- * and 6 cohesive 3D products tailored to ANY website's real headlines, vocabulary, and vertical.
- */
-function inventDeterministicBrandWorld(identity: DeepWebsiteIdentity): CreativeDirectorBlueprint {
-  const {
-    brandName,
-    monogram,
-    hostname,
-    subVertical,
-    recommendedArchetype: archetype,
-    evocativeNouns,
-    graphicCopyCandidates,
-    headlines,
-    description,
-    catalogInspirations,
-  } = identity;
-
-  const { palette, lightingPreset, metalRoughness, metalness } = buildBrandBlendedPalette(
-    archetype,
-    identity
-  );
-
-  // Pull real site-specific nouns first, falling back to vertical-authentic lexicon
-  const verticalLexicon: Record<BrandSubVertical, { nouns: string[]; graphics: string[]; sub: string }> = {
-    software_ai: {
-      nouns: ['Momentum', 'Cycle Zero', 'Changelog', 'Night Build', 'Kernel', 'Protocol'],
-      graphics: [`${monogram} // SYS`, 'CYCLE 01', 'ZERO LATENCY', 'BUILD MODE', 'SHIP FAST', `${monogram} CORE`],
-      sub: `ENGINEERED EDITION · ${hostname.toUpperCase()}`,
-    },
-    fintech: {
-      nouns: ['Global Ledger', 'Settlement', 'Mainnet', 'Treasury', ' Clearing', 'API Core'],
-      graphics: [`${monogram} LEDGER`, 'SETTLED 01', 'GLOBAL RAIL', 'UPTIME 99.99', `${monogram} INFRA`, 'BORDERLESS'],
-      sub: `INFRASTRUCTURE SERIES · ${hostname.toUpperCase()}`,
-    },
-    aerospace_science: {
-      nouns: ['Orbital Vector', 'Telemetry', 'Deep Space', 'Flight Deck', 'Apogee', 'Mission Log'],
-      graphics: [`${monogram} ORBITAL`, 'FLIGHT DECK', 'APOGEE LAB', 'TELEMETRY 01', 'LOW ORBIT', `${monogram} VECTOR`],
-      sub: `AEROSPACE ARCHIVE · ${hostname.toUpperCase()}`,
-    },
-    creative_portfolio: {
-      nouns: ['Selected Work', 'Form Study', 'Grid Index', 'Prototype', ' Monograph', 'Studio Proof'],
-      graphics: [`${monogram} STUDIO`, 'PROOF 01', 'FORM & CODE', 'INDEX EDITION', `${monogram} LAB`, 'ATELIER'],
-      sub: `INDEPENDENT PRACTICE · ${hostname.toUpperCase()}`,
-    },
-    coffee_culinary: {
-      nouns: ['Single Origin', 'Morning Pour', 'First Crack', 'Roastery', 'Dial-In', 'Bloom'],
-      graphics: ['SINGLE ORIGIN', 'POUR OVER', `${monogram} ROAST`, 'SMALL BATCH', 'MORNING CUP', 'HARVEST LOT'],
-      sub: `SMALL-BATCH ROASTERY · ${hostname.toUpperCase()}`,
-    },
-    botanical_apothecary: {
-      nouns: ['Botanical', 'Distillate', 'Herbaceous', 'Formulation', 'Rind & Leaf', 'Lab No. 04'],
-      graphics: [`${monogram} LAB 04`, 'BOTANICAL', 'AROMATIC OIL', 'SMALL BATCH', 'APOTHECARY', `${monogram} ESSENCE`],
-      sub: `BOTANICAL FORMULATION · ${hostname.toUpperCase()}`,
-    },
-    organic_apparel: {
-      nouns: ['Nile Delta', 'Raw Loom', 'Field Spun', 'Atelier', 'Earth Dye', 'Harvest Knit'],
-      graphics: [`${monogram} ATELIER`, 'TRACEABLE', 'NATURAL LOOM', 'FIRST HARVEST', `${monogram} CRAFT`, 'PURE FIBER'],
-      sub: `TRACEABLE NATURAL FIBERS · ${hostname.toUpperCase()}`,
-    },
-    writer_substack: {
-      nouns: ['Sunday Issue', 'Margin Notes', 'Longform', 'Dispatch', 'Editorial', 'First Draft'],
-      graphics: ['ISSUE NO. 01', 'LONGFORM', `${monogram} PRESS`, 'READERS CLUB', 'MARGINALIA', 'DISPATCH'],
-      sub: `READER EDITION · ${hostname.toUpperCase()}`,
-    },
-    film_cinema: {
-      nouns: ["Director's Cut", 'Screening Room', 'Final Draft', '35mm Print', 'Auteur', 'Night Shoot'],
-      graphics: ['SCREENING 01', 'FINAL DRAFT', `${monogram} PICTURES`, '35MM ARCHIVE', 'DIRECTORS CUT', 'SCENE 24'],
-      sub: `MOTION PICTURE ARCHIVE · ${hostname.toUpperCase()}`,
-    },
-    music_audio: {
-      nouns: ['Test Pressing', 'Soundcheck', 'B-Side', 'Analog Dub', 'Late Session', 'Master Tape'],
-      graphics: ['TEST PRESS', '33 1/3 RPM', `${monogram} SOUND`, 'ANALOG LAB', 'LATE SESSION', 'SIDE A'],
-      sub: `LIMITED AUDIO EDITION · ${hostname.toUpperCase()}`,
-    },
-    streetwear_drop: {
-      nouns: ['Concrete', 'Heavy Gauge', ' Syndicate', 'Block Party', 'Capsule 01', 'Deadstock'],
-      graphics: [`${monogram} DROP 01`, 'HEAVY GAUGE', 'LIMITED RUN', `${monogram} CLUB`, 'ARCHIVE 01', 'WORLDWIDE'],
-      sub: `SEASONAL DROP CAPSULE · ${hostname.toUpperCase()}`,
-    },
-    editorial_press: {
-      nouns: ['Morning Desk', 'Print Run', 'Sunday Review', 'Typesetter', 'Columnist', 'Broadsheet'],
-      graphics: ['MORNING EDITION', 'PRINT ARCHIVE', `${monogram} DESK`, 'LATE CITY', 'TYPESET 01', 'SUNDAY BOOK'],
-      sub: `EDITORIAL ARCHIVE · ${hostname.toUpperCase()}`,
-    },
-    collegiate_club: {
-      nouns: ['Regatta', 'Clubhouse', 'Varsity Crest', 'Boathouse', 'First VIII', 'Lawn Court'],
-      graphics: [`${monogram} CLUB`, 'VARSITY XV', 'CHAMPIONSHIP', 'BOATHOUSE', `EST. ${monogram}`, 'REGATTA'],
-      sub: `HERITAGE CLUBHOUSE · ${hostname.toUpperCase()}`,
-    },
-    luxury_archive: {
-      nouns: ['Grand Salon', 'Atelier', 'Sartorial', 'First Edition', 'Archive', 'Reserve'],
-      graphics: [`MAISON ${monogram}`, 'ATELIER 01', 'RESERVE', `${monogram} CREST`, 'ARCHIVE EDITION', 'BESPOKE'],
-      sub: `FLAGSHIP ARCHIVE · ${hostname.toUpperCase()}`,
-    },
-  };
-
-  const lex = verticalLexicon[subVertical];
-  const mergedNouns = [...evocativeNouns, ...lex.nouns];
-  const mergedGraphics = [...graphicCopyCandidates, ...lex.graphics];
-
-  const nounAt = (idx: number) => mergedNouns[idx % mergedNouns.length] || lex.nouns[idx % lex.nouns.length];
-  const graphicAt = (idx: number) =>
-    clampGraphicHeadline(mergedGraphics[idx % mergedGraphics.length], monogram);
-
-  // Select optimal hanging silhouettes + 3 distinct physical object categories for this sub-vertical
-  let apparelOrder: [ProductCategory3D, ProductCategory3D, ProductCategory3D] = [
-    'heavyweight_hoodie',
-    'structured_tshirt',
-    'varsity_jacket',
-  ];
-  let objectOrder: [ProductCategory3D, ProductCategory3D, ProductCategory3D] = [
-    'hardcover_book',
-    'ceramic_mug',
-    'structured_cap',
-  ];
-  let motifs: ProductGraphicMotif[] = [
-    'geometric_grid',
-    'minimal_typo',
-    'orbital_rings',
-    'minimal_typo',
-    'geometric_grid',
-    'monogram_crest',
-  ];
-
-  if (subVertical === 'aerospace_science') {
-    apparelOrder = ['varsity_jacket', 'heavyweight_hoodie', 'structured_tshirt'];
-    objectOrder = ['hardcover_book', 'structured_cap', 'ceramic_mug'];
-    motifs = ['orbital_rings', 'geometric_grid', 'minimal_typo', 'orbital_rings', 'archival_seal', 'geometric_grid'];
-  } else if (subVertical === 'coffee_culinary') {
-    apparelOrder = ['structured_tshirt', 'heavyweight_hoodie', 'varsity_jacket'];
-    objectOrder = ['ceramic_mug', 'canvas_tote', 'apothecary_bottle'];
-    motifs = ['botanical_line', 'archival_seal', 'minimal_typo', 'botanical_line', 'minimal_typo', 'archival_seal'];
-  } else if (subVertical === 'botanical_apothecary') {
-    apparelOrder = ['structured_tshirt', 'heavyweight_hoodie', 'varsity_jacket'];
-    objectOrder = ['apothecary_bottle', 'hardcover_book', 'canvas_tote'];
-    motifs = ['botanical_line', 'minimal_typo', 'archival_seal', 'minimal_typo', 'botanical_line', 'minimal_typo'];
-  } else if (subVertical === 'organic_apparel') {
-    apparelOrder = ['heavyweight_hoodie', 'structured_tshirt', 'varsity_jacket'];
-    objectOrder = ['canvas_tote', 'apothecary_bottle', 'hardcover_book'];
-    motifs = ['botanical_line', 'minimal_typo', 'monogram_crest', 'archival_seal', 'botanical_line', 'minimal_typo'];
-  } else if (subVertical === 'writer_substack' || subVertical === 'editorial_press') {
-    apparelOrder = ['heavyweight_hoodie', 'structured_tshirt', 'varsity_jacket'];
-    objectOrder = ['hardcover_book', 'canvas_tote', 'ceramic_mug'];
-    motifs = ['minimal_typo', 'archival_seal', 'monogram_crest', 'minimal_typo', 'archival_seal', 'minimal_typo'];
-  } else if (subVertical === 'film_cinema' || subVertical === 'music_audio') {
-    apparelOrder = ['varsity_jacket', 'heavyweight_hoodie', 'structured_tshirt'];
-    objectOrder = ['hardcover_book', 'structured_cap', 'canvas_tote'];
-    motifs = ['minimal_typo', 'archival_seal', 'geometric_grid', 'minimal_typo', 'monogram_crest', 'archival_seal'];
-  } else if (subVertical === 'streetwear_drop') {
-    apparelOrder = ['heavyweight_hoodie', 'varsity_jacket', 'structured_tshirt'];
-    objectOrder = ['structured_cap', 'canvas_tote', 'ceramic_mug'];
-    motifs = ['archival_seal', 'monogram_crest', 'geometric_grid', 'monogram_crest', 'minimal_typo', 'geometric_grid'];
-  } else if (subVertical === 'collegiate_club' || subVertical === 'luxury_archive') {
-    apparelOrder = ['varsity_jacket', 'heavyweight_hoodie', 'structured_tshirt'];
-    objectOrder = ['hardcover_book', 'structured_cap', 'canvas_tote'];
-    motifs = ['monogram_crest', 'archival_seal', 'minimal_typo', 'monogram_crest', 'monogram_crest', 'archival_seal'];
-  }
-
-  // Curated 6-piece capsule color story anchored by scraped brand colors + WCAG legibility
-  const isDarkRoom = archetype === 'minimalist_tech_pavilion' || archetype === 'avant_garde_concrete_loft';
-  const darkAnchor = isDarkRoom ? mixHex('#181A20', palette.accent, 0.12) : mixHex('#1D222B', palette.accent, 0.22);
-  const lightNeutral = isDarkRoom ? '#ECE9E1' : '#F5F0E6';
-  const richBrandBody = ensureWcagContrast(
-    mixHex(palette.accent, '#1B1F28', 0.22),
-    palette.wall,
-    2.2
-  );
-  const canvasEcru = '#EDE5D6';
-  const stonewareTone = isDarkRoom ? mixHex('#262930', palette.accent, 0.16) : mixHex('#E4DACB', palette.accent, 0.12);
-
-  const slotConfigs: Array<{
-    placement: ProductPlacementZone;
-    category: ProductCategory3D;
-    featured: boolean;
-    primaryColor: string;
-    secondaryColor: string;
-    desiredAccent: string;
-  }> = [
-    {
-      placement: 'hero_rack',
-      category: apparelOrder[0],
-      featured: true,
-      primaryColor: darkAnchor,
-      secondaryColor: mixHex(darkAnchor, lightNeutral, 0.22),
-      desiredAccent: palette.accent,
-    },
-    {
-      placement: 'capsule_rack',
-      category: apparelOrder[1],
-      featured: false,
-      primaryColor: lightNeutral,
-      secondaryColor: mixHex(lightNeutral, darkAnchor, 0.18),
-      desiredAccent: palette.accent,
-    },
-    {
-      placement: 'capsule_rack',
-      category: apparelOrder[2],
-      featured: false,
-      primaryColor: richBrandBody,
-      secondaryColor: lightNeutral,
-      desiredAccent: '#F6F2E9',
-    },
-    {
-      placement: 'center_table',
-      category: objectOrder[0],
-      featured: false,
-      primaryColor: objectOrder[0] === 'apothecary_bottle' ? '#3B281D' : darkAnchor,
-      secondaryColor: canvasEcru,
-      desiredAccent: palette.accent,
-    },
-    {
-      placement: 'left_pedestal',
-      category: objectOrder[1],
-      featured: false,
-      primaryColor: objectOrder[1] === 'canvas_tote' ? canvasEcru : stonewareTone,
-      secondaryColor: darkAnchor,
-      desiredAccent: palette.accent,
-    },
-    {
-      placement: 'right_pedestal',
-      category: objectOrder[2],
-      featured: false,
-      primaryColor:
-        objectOrder[2] === 'apothecary_bottle'
-          ? '#3B281D'
-          : objectOrder[2] === 'canvas_tote'
-            ? canvasEcru
-            : mixHex(darkAnchor, palette.accent, 0.32),
-      secondaryColor: lightNeutral,
-      desiredAccent: objectOrder[2] === 'canvas_tote' ? darkAnchor : '#F5F1E8',
-    },
-  ];
-
-  const cleanBrandTitle = toTitleCase(brandName.replace(/^THE\s+/i, ''));
-  const composeTitle = (prefix: string, suffix: string): string => {
-    const suffixWords = new Set(
-      suffix
-        .toLowerCase()
-        .replace(/[^a-z0-9 ]/g, '')
-        .split(/\s+/)
-    );
-    const filteredPrefix = prefix
-      .split(/\s+/)
-      .filter((w) => !suffixWords.has(w.toLowerCase()))
-      .join(' ')
-      .trim();
-    return `${filteredPrefix || monogram} ${suffix}`;
-  };
-
-  const categoryTemplates: Record<
-    ProductCategory3D,
-    (concept: string) => {
-      title: string;
-      subtitle: string;
-      price: number;
-      rationale: string;
-    }
-  > = {
-    heavyweight_hoodie: (c) => ({
-      title: composeTitle(c, '480gsm Hoodie'),
-      subtitle: `${brandName} · Loopback Heavyweight French Terry`,
-      price: 148,
-      rationale: `Translates ${brandName}'s "${c}" ethos into a tactile daily uniform piece with gallery-grade drape and high-contrast chest typography.`,
-    }),
-    varsity_jacket: (c) => ({
-      title: composeTitle(c, 'Wool Varsity Jacket'),
-      subtitle: `${brandName} · Boiled Merino Body & Contrast Trim`,
-      price: 295,
-      rationale: `Positions ${brandName} as an insider cultural club with a collectible statement outerwear silhouette anchored by the ${monogram} emblem.`,
-    }),
-    structured_tshirt: (c) => ({
-      title: composeTitle(c, 'Heavyweight Tee'),
-      subtitle: `${brandName} · 275gsm Combed Organic Jersey`,
-      price: 68,
-      rationale: `Offers an accessible, high-margin entry point into the ${brandName} world using architectural box-cut proportions and crisp graphic ink.`,
-    }),
-    ceramic_mug: (c) => ({
-      title: composeTitle(c, 'Stoneware Mug'),
-      subtitle: `${brandName} · Hand-Glazed Matte Kiln Ceramic`,
-      price: 38,
-      rationale: `Brings ${brandName} onto the customer's desk and morning ritual counter with tactile matte stoneware glazed in brand tones.`,
-    }),
-    structured_cap: (c) => ({
-      title: composeTitle(c, '6-Panel Club Cap'),
-      subtitle: `${brandName} · Brushed Cotton Twill & Raised Stitch`,
-      price: 48,
-      rationale: `Delivers subtle everyday insider signaling for ${brandName} fans through structured crown geometry and tonal ${monogram} embroidery.`,
-    }),
-    canvas_tote: (c) => ({
-      title: composeTitle(c, '16oz Canvas Tote'),
-      subtitle: `${brandName} · Gusseted Unbleached Heavy Duck Canvas`,
-      price: 54,
-      rationale: `Turns ${brandName}'s editorial identity into a mobile street-level billboard sized for laptops, vinyl, and weekend market runs.`,
-    }),
-    hardcover_book: (c) => ({
-      title: `${c}: The ${cleanBrandTitle} Monograph`,
-      subtitle: `${brandName} · Foil-Stamped Clothbound Hardcover (240pp)`,
-      price: 78,
-      rationale: `Cements ${brandName}'s intellectual authority on the center display table as a collectible coffee-table artifact.`,
-    }),
-    apothecary_bottle: (c) => ({
-      title: composeTitle(c, 'Botanical Elixir'),
-      subtitle: `${brandName} · UV-Amber Frosted Apothecary Vessel (250ml)`,
-      price: 64,
-      rationale: `Extends ${brandName}'s sensory world beyond textiles with an architectural apothecary vessel designed for sculptural shelf presence.`,
-    }),
-  };
-
-  const brandSlug = slugify(brandName);
-  const usedShopifyHandles = new Set<string>();
-
-  const products: InventedProductSpec[] = slotConfigs.map((slot, idx) => {
-    const concept = nounAt(idx);
-    const tpl = categoryTemplates[slot.category](concept);
-    const matchedShopify = matchShopifyInspirationForCategory(
-      slot.category,
-      catalogInspirations,
-      usedShopifyHandles
-    );
-
-    const accentColor = ensureWcagContrast(slot.desiredAccent, slot.primaryColor, 3.6);
-    const secondaryColor =
-      wcagContrastRatio(slot.secondaryColor, slot.primaryColor) >= 1.35
-        ? slot.secondaryColor
-        : mixHex(slot.primaryColor, accentColor, 0.28);
-
-    const title =
-      matchedShopify && matchedShopify.title.length <= 54
-        ? matchedShopify.title
-        : tpl.title;
-    const price = matchedShopify ? matchedShopify.price : tpl.price;
-
-    return {
-      id: `inv-${brandSlug}-${idx + 1}-${slot.placement}`,
-      sku: `${monogram}-${categorySkuCode(slot.category)}-0${idx + 1}`,
-      title,
-      subtitle: tpl.subtitle,
-      category: slot.category,
-      placement: slot.placement,
-      price,
-      primaryColor: slot.primaryColor,
-      secondaryColor,
-      accentColor,
-      graphicHeadline: graphicAt(idx),
-      graphicSubtext: lex.sub.slice(0, 38),
-      graphicMotif: motifs[idx % motifs.length],
-      materialFinish: defaultMaterialFinishForCategory(slot.category),
-      designRationale: tpl.rationale,
-      shopifyProductUrl: matchedShopify?.shopifyProductUrl,
-      shopifyVariantId: matchedShopify?.shopifyVariantId,
-      featured: slot.featured,
-    };
-  });
-
-  const leadQuote = headlines[0] || description;
-  const trimmedQuote =
-    leadQuote && leadQuote.length >= 8
-      ? `"${leadQuote.slice(0, 78)}${leadQuote.length > 78 ? '...' : ''}"`
-      : `${hostname}'s signature digital identity`;
-
-  const archetypeDescriptions: Record<
-    WorldArchetypeId,
-    { label: string; vibe: string; taglinePrefix: string }
-  > = {
-    minimalist_tech_pavilion: {
-      label: 'Minimalist Tech Pavilion',
-      vibe: 'Obsidian architectural slate, honed basalt slabs, anodized steel rails & 5200K gallery spots',
-      taglinePrefix: 'PRECISION HARDWARE & APPAREL PAVILION',
-    },
-    warm_artisanal_atelier: {
-      label: 'Warm Artisanal Atelier',
-      vibe: 'Hand-troweled sand clay plaster, white oak timber, blackened bronze fixtures & Kyoto golden hour light',
-      taglinePrefix: 'SMALL-BATCH ATELIER & OBJECT STUDY',
-    },
-    avant_garde_concrete_loft: {
-      label: 'Avant-Garde Concrete Loft',
-      vibe: 'Board-formed monolithic concrete, dark aggregate terrazzo, mirror chrome & high-contrast gallery beam',
-      taglinePrefix: 'SCREENING ROOM & CAPSULE LOFT',
-    },
-    heritage_arch_flagship: {
-      label: 'Heritage Arch Flagship',
-      vibe: 'Venetian limewash arches, honed Roman travertine, antique brass hardware & warm afternoon court sunlight',
-      taglinePrefix: 'FLAGSHIP CLUBHOUSE & ARCHIVE SALON',
-    },
-  };
-
-  const archMeta = archetypeDescriptions[archetype];
-  const brandEthos = `Distilled ${trimmedQuote} into a bespoke ${archMeta.label} (${palette.wall} / ${palette.accent}), pairing 3 tailored ${brandName} silhouettes with 3 tactile collector objects.`;
-
-  const architectNotes = [
-    `Selected the ${archMeta.label} archetype for ${hostname}, blending scraped brand accent (${palette.accent}) against ${palette.wall} architectural surfaces with WCAG-verified contrast.`,
-    `Extracted website headline vocabulary (${evocativeNouns.slice(0, 3).join(', ') || nounAt(0)}) directly into chest graphics, hardcover monograph typography, and bespoke SKUs.`,
-    `Merchandised 1 centerpiece ${products[0].category.replace('_', ' ')} on the hero faceout, 2 companion silhouettes on the capsule rail, and 3 physical 3D objects across the table and pedestals.`,
-  ];
-
-  return {
-    brandName,
-    tagline: `${archMeta.taglinePrefix} // ${hostname.toUpperCase()}`,
-    vibe: archMeta.vibe,
-    brandEthos,
-    archetype,
-    lightingPreset,
-    metalRoughness,
-    metalness,
-    palette,
-    architectNotes,
-    products,
-  };
 }
 
 function sanitizeStorePalette(
@@ -2160,183 +2100,170 @@ function sanitizeStorePalette(
   };
 }
 
-const CREATIVE_DIRECTOR_SCHEMA = {
-  type: 'object',
-  properties: {
-    brandName: { type: 'string' },
-    tagline: { type: 'string' },
-    vibe: { type: 'string' },
-    brandEthos: { type: 'string' },
-    archetype: {
-      type: 'string',
-      enum: [
-        'heritage_arch_flagship',
-        'minimalist_tech_pavilion',
-        'warm_artisanal_atelier',
-        'avant_garde_concrete_loft',
-      ],
-    },
-    lightingPreset: {
-      type: 'string',
-      enum: ['warm_court_sunlight', 'cool_gallery_spot', 'kyoto_golden_hour'],
-    },
-    metalRoughness: { type: 'number' },
-    metalness: { type: 'number' },
-    palette: {
-      type: 'object',
-      properties: {
-        wall: { type: 'string' },
-        floor: { type: 'string' },
-        accent: { type: 'string' },
-        secondaryAccent: { type: 'string' },
-        rackMetal: { type: 'string' },
-        hangerWood: { type: 'string' },
-        plinth: { type: 'string' },
-        rug: { type: 'string' },
-        ambientLight: { type: 'string' },
-        spotLight: { type: 'string' },
-      },
-      required: ['wall', 'floor', 'accent', 'secondaryAccent', 'rackMetal', 'hangerWood', 'plinth', 'rug', 'ambientLight', 'spotLight'],
-    },
-    architectNotes: {
-      type: 'array',
-      items: { type: 'string' },
-    },
-    products: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          title: { type: 'string' },
-          subtitle: { type: 'string' },
-          category: {
-            type: 'string',
-            enum: [
-              'heavyweight_hoodie',
-              'structured_tshirt',
-              'varsity_jacket',
-              'ceramic_mug',
-              'structured_cap',
-              'canvas_tote',
-              'hardcover_book',
-              'apothecary_bottle',
-            ],
-          },
-          placement: {
-            type: 'string',
-            enum: ['hero_rack', 'capsule_rack', 'center_table', 'left_pedestal', 'right_pedestal'],
-          },
-          price: { type: 'number' },
-          primaryColor: { type: 'string' },
-          secondaryColor: { type: 'string' },
-          accentColor: { type: 'string' },
-          graphicHeadline: { type: 'string' },
-          graphicSubtext: { type: 'string' },
-          graphicMotif: {
-            type: 'string',
-            enum: [
-              'monogram_crest',
-              'geometric_grid',
-              'botanical_line',
-              'minimal_typo',
-              'archival_seal',
-              'orbital_rings',
-            ],
-          },
-          materialFinish: {
-            type: 'string',
-            enum: [
-              'combed_cotton',
-              'brushed_fleece',
-              'merino_knit',
-              'matte_stoneware',
-              'frosted_glass',
-              'heavy_canvas',
-            ],
-          },
-          designRationale: { type: 'string' },
-        },
-        required: [
-          'title',
-          'subtitle',
-          'category',
-          'placement',
-          'price',
-          'primaryColor',
-          'secondaryColor',
-          'accentColor',
-          'graphicHeadline',
-          'graphicMotif',
-          'designRationale',
-        ],
-      },
-    },
-  },
-  required: ['brandName', 'tagline', 'vibe', 'brandEthos', 'archetype', 'lightingPreset', 'palette', 'architectNotes', 'products'],
-};
+function inventDeterministicBrandWorld(identity: DeepWebsiteIdentity): CreativeDirectorBlueprint {
+  const {
+    brandName,
+    monogram,
+    hostname,
+    recommendedArchetype: archetype,
+    evocativeNouns,
+    headlines,
+    description,
+  } = identity;
 
-/**
- * Gemini 4 Creative Director & Merch Strategist via `@google/genai` Interactions API.
- * Enforces a tight 5.5s live-demo timeout and normalizes all 6 product slots + WCAG colors.
- */
-async function tryInventWithGemini(
+  const { palette, lightingPreset, metalRoughness, metalness } = buildBrandBlendedPalette(
+    archetype,
+    identity
+  );
+
+  const archetypeDescriptions: Record<
+    WorldArchetypeId,
+    { label: string; vibe: string; taglinePrefix: string }
+  > = {
+    minimalist_tech_pavilion: {
+      label: 'Minimalist Tech Pavilion',
+      vibe: 'Obsidian architectural slate, honed basalt slabs, anodized steel rails & 5200K gallery spots',
+      taglinePrefix: 'PRECISION HARDWARE & APPAREL PAVILION',
+    },
+    warm_artisanal_atelier: {
+      label: 'Warm Artisanal Atelier',
+      vibe: 'Hand-troweled sand clay plaster, white oak timber, blackened bronze fixtures & Kyoto golden hour light',
+      taglinePrefix: 'SMALL-BATCH ATELIER & OBJECT STUDY',
+    },
+    avant_garde_concrete_loft: {
+      label: 'Avant-Garde Concrete Loft',
+      vibe: 'Board-formed monolithic concrete, dark aggregate terrazzo, mirror chrome & high-contrast gallery beam',
+      taglinePrefix: 'SCREENING ROOM & CAPSULE LOFT',
+    },
+    heritage_arch_flagship: {
+      label: 'Heritage Arch Flagship',
+      vibe: 'Venetian limewash arches, honed Roman travertine, antique brass hardware & warm afternoon court sunlight',
+      taglinePrefix: 'FLAGSHIP CLUBHOUSE & ARCHIVE SALON',
+    },
+  };
+
+  const archMeta = archetypeDescriptions[archetype];
+  const leadQuote = headlines[0] || description;
+  const trimmedQuote =
+    leadQuote && leadQuote.length >= 8
+      ? `"${leadQuote.slice(0, 78)}${leadQuote.length > 78 ? '...' : ''}"`
+      : `${hostname}'s visual identity`;
+
+  const brandEthos = `Distilled ${trimmedQuote} into a ${archMeta.label} (${palette.wall} / ${palette.accent}), curating real internet apparel & physical collector objects matched to ${brandName}'s visual DNA.`;
+
+  const fallbackSlots: Array<{ placement: ProductPlacementZone; category: ProductCategory3D; price: number }> = [
+    { placement: 'hero_rack', category: 'heavyweight_hoodie', price: 148 },
+    { placement: 'capsule_rack', category: 'structured_tshirt', price: 68 },
+    { placement: 'capsule_rack', category: 'varsity_jacket', price: 245 },
+    { placement: 'center_table', category: 'hardcover_book', price: 64 },
+    { placement: 'left_pedestal', category: 'ceramic_mug', price: 36 },
+    { placement: 'right_pedestal', category: 'canvas_tote', price: 48 },
+  ];
+
+  const brandSlug = slugify(brandName);
+  const products: InventedProductSpec[] = fallbackSlots.map((slot, idx) => ({
+    id: `matched-${brandSlug}-${idx + 1}-${slot.placement}`,
+    sku: `${monogram}-${categorySkuCode(slot.category)}-0${idx + 1}`,
+    title: `${brandName} ${slot.category.replace('_', ' ')}`,
+    subtitle: `${brandName} · Matched Capsule Selection`,
+    category: slot.category,
+    placement: slot.placement,
+    price: slot.price,
+    primaryColor: idx % 2 === 0 ? '#1C1E24' : '#EFECE4',
+    secondaryColor: palette.plinth,
+    accentColor: ensureWcagContrast(palette.accent, '#1C1E24', 3.4),
+    graphicHeadline: clampGraphicHeadline(evocativeNouns[idx] || monogram, monogram),
+    graphicSubtext: hostname.toUpperCase().slice(0, 32),
+    graphicMotif: 'minimal_typo',
+    materialFinish: defaultMaterialFinishForCategory(slot.category),
+    designRationale: `Curated to echo ${brandName}'s visual palette and spatial retail atmosphere.`,
+    featured: idx === 0,
+  }));
+
+  return {
+    brandName,
+    tagline: `${archMeta.taglinePrefix} // ${hostname.toUpperCase()}`,
+    vibe: archMeta.vibe,
+    brandEthos,
+    archetype,
+    lightingPreset,
+    metalRoughness,
+    metalness,
+    palette,
+    architectNotes: [
+      `Selected ${archMeta.label} (${palette.wall} / ${palette.accent}) from ${hostname}'s visual identity.`,
+      `Curated 3 real upper-body studio garments on hero & capsule rails alongside 3 physical objects across the table and plinths.`,
+    ],
+    products,
+  };
+}
+
+// ============================================================================
+// 3. MULTIMODAL `gemini-4-neon` INITIAL PHOTO ANALYZER & QUERY PLANNER
+// ============================================================================
+
+async function planBrandAndQueriesWithGeminiNeon(
   apiKey: string,
   model: string,
   identity: DeepWebsiteIdentity,
-  fallback: CreativeDirectorBlueprint
-): Promise<CreativeDirectorBlueprint | null> {
-  const promptContext = {
-    websiteUrl: identity.url,
-    hostname: identity.hostname,
-    brandName: identity.brandName,
-    monogram: identity.monogram,
-    pageTitle: identity.pageTitle,
-    description: identity.description,
-    heroHeadlines: identity.headlines.slice(0, 6),
-    manifestoSentences: identity.manifestoSentences.slice(0, 4),
-    navSections: identity.navLabels.slice(0, 8),
-    extractedVocabulary: identity.evocativeNouns.slice(0, 10),
-    colorProfile: {
-      isDarkWebsite: identity.colorProfile.isDarkWebsite,
-      themeColor: identity.colorProfile.themeColor,
-      primaryBrandHex: identity.colorProfile.primaryBrandHex,
-      vibrantAccents: identity.colorProfile.vibrantAccents.slice(0, 5),
-      darkBackgrounds: identity.colorProfile.darkBackgrounds.slice(0, 3),
-      lightBackgrounds: identity.colorProfile.lightBackgrounds.slice(0, 3),
-    },
-    recommendedArchetype: identity.recommendedArchetype,
-    realStoreInspirations: identity.catalogInspirations.slice(0, 6).map((p) => ({
-      title: p.title,
-      type: p.productType,
-      price: p.price,
-    })),
-  };
-
-  const systemInstruction = `You are a world-class Retail Creative Director, Spatial Architect, and Brand Merch Strategist.
-Given any website's scraped identity, ethos, headlines, and CSS colors, invent a bespoke 3D flagship showroom AND a cohesive 6-product sellable capsule line specifically tailored to that brand:
-1. Choose the exact archetype:
-   - "minimalist_tech_pavilion": software, AI, fintech, developer tools, aerospace, modern hardware (obsidian/slate walls ~#17191E, basalt floor ~#22252C, anodized steel #C8D0DC, "cool_gallery_spot").
-   - "warm_artisanal_atelier": coffee, food/beverage, botanicals, skincare, ceramics, organic craft, newsletters/Substacks (warm clay/sand walls ~#E8DDD0, oak/limestone floor ~#C9B39B, blackened bronze #3E3731, "kyoto_golden_hour").
-   - "avant_garde_concrete_loft": film, cinema, music, streetwear, gaming, contemporary art (board-formed concrete ~#323438, dark terrazzo ~#1E2023, chrome #DCE0E6, bold accent, "cool_gallery_spot").
-   - "heritage_arch_flagship": collegiate, sports clubs, newspapers/publishing, classic fashion, luxury archive (limewash ~#F1ECE1, travertine ~#DDD4C5, antique brass #C5A059, "warm_court_sunlight").
-   Blend the website's real scraped hex colors into palette.accent and palette.wall!
-2. Write a sharp 1-2 sentence "brandEthos" explaining the website's core ethos and spatial retail concept.
-3. Invent EXACTLY 6 products in this order:
-   - Product 1: placement="hero_rack", category in ["heavyweight_hoodie","varsity_jacket","structured_tshirt"] (centerpiece garment)
-   - Product 2: placement="capsule_rack", category in ["heavyweight_hoodie","varsity_jacket","structured_tshirt"]
-   - Product 3: placement="capsule_rack", category in ["heavyweight_hoodie","varsity_jacket","structured_tshirt"]
-   - Product 4: placement="center_table", category in ["ceramic_mug","structured_cap","canvas_tote","hardcover_book","apothecary_bottle"]
-   - Product 5: placement="left_pedestal", category in ["ceramic_mug","structured_cap","canvas_tote","hardcover_book","apothecary_bottle"] (distinct category)
-   - Product 6: placement="right_pedestal", category in ["ceramic_mug","structured_cap","canvas_tote","hardcover_book","apothecary_bottle"] (distinct category)
-   Use evocative nouns/phrases from the site's actual headlines! Keep every graphicHeadline <= 16 uppercase characters, vary primaryColor across items, ensure strong contrast between primaryColor and accentColor, and give each a 1-sentence designRationale.`;
+  initialPhotos: DownloadedInitialPhoto[],
+  fallbackBlueprint: CreativeDirectorBlueprint,
+  heuristicCluster: AestheticClusterId
+): Promise<NeonVisualBrandPlan | null> {
+  const cacheKey = `${identity.url}::${model}`;
+  const cached = NEON_VISUAL_PLAN_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < CATALOG_CACHE_TTL_MS) {
+    return cached.plan;
+  }
 
   const ai = new GoogleGenAI({ apiKey });
+
+  // CRITICAL SDK SYNTAX: Always wrap multimodal content inside `[{ type: 'user_input', content: [...] }]`!
+  const userContentParts: Array<
+    | {
+        type: 'image';
+        data: string;
+        mime_type: SupportedVisionMimeType;
+        resolution: 'low';
+      }
+    | { type: 'text'; text: string }
+  > = [];
+
+  for (const photo of initialPhotos) {
+    userContentParts.push({
+      type: 'image',
+      data: photo.base64,
+      mime_type: photo.mimeType,
+      resolution: 'low',
+    });
+  }
+
+  const compactSiteContext = {
+    url: identity.url,
+    hostname: identity.hostname,
+    brandName: identity.brandName,
+    title: identity.pageTitle || identity.ogTitle,
+    description: identity.description.slice(0, 180),
+    headlines: identity.headlines.slice(0, 4),
+    scrapedColors: {
+      isDark: identity.colorProfile.isDarkWebsite,
+      primaryHex: identity.colorProfile.primaryBrandHex,
+      accents: identity.colorProfile.vibrantAccents.slice(0, 3),
+    },
+    initialPhotoCount: initialPhotos.length,
+  };
+
+  userContentParts.push({
+    type: 'text',
+    text: `Website & Initial Photo Context:\n${JSON.stringify(compactSiteContext)}\n\nAnalyze the attached initial website photo(s) (or brand identity if 0 photos) for color palette, lighting mood, and cultural aesthetic. Output ONLY raw compact JSON (no markdown fences) matching this exact structure:
+{"brandName":"...","tagline":"...","vibe":"...","brandEthos":"1-2 sentences tying the initial site visuals to a physical flagship concept","archetype":"minimalist_tech_pavilion|warm_artisanal_atelier|avant_garde_concrete_loft|heritage_arch_flagship","lightingPreset":"warm_court_sunlight|cool_gallery_spot|kyoto_golden_hour","aestheticCluster":"cinema_streetwear|minimal_tech|artisanal_cafe|heritage_club","palette":{"wall":"#RRGGBB","floor":"#RRGGBB","accent":"#RRGGBB","secondaryAccent":"#RRGGBB","rackMetal":"#RRGGBB","hangerWood":"#RRGGBB","plinth":"#RRGGBB","rug":"#RRGGBB","ambientLight":"#RRGGBB","spotLight":"#RRGGBB"},"searchKeywords":{"apparel":["3-4 specific upper-body search terms like hoodie, heavyweight tee, chore jacket, sweater"],"objects":["3-4 specific object search terms like ceramic mug, tote, cap, book, candle"],"colorWords":["2-3 color words matching the initial photos"]},"architectNotes":["note 1","note 2"]}`,
+  });
 
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutHandle = setTimeout(() => {
-      reject(new Error('Gemini Creative Director timed out after 5500ms'));
-    }, 5500);
+      reject(new Error('gemini-4-neon visual planner timed out'));
+    }, 12500);
   });
 
   let rawText: string | null | undefined;
@@ -2344,13 +2271,17 @@ Given any website's scraped identity, ethos, headlines, and CSS colors, invent a
     const interaction = await Promise.race([
       ai.interactions.create({
         model,
-        system_instruction: systemInstruction,
-        input: `Website Identity Data:\n${JSON.stringify(promptContext)}`,
-        response_format: {
-          type: 'text',
-          mime_type: 'application/json',
-          schema: CREATIVE_DIRECTOR_SCHEMA,
+        system_instruction:
+          'You are a Retail Spatial Architect & Visual Merchandiser. Be direct, concise, and emit valid compact JSON immediately using #RRGGBB hex codes.',
+        generation_config: {
+          thinking_level: 'low',
         },
+        input: [
+          {
+            type: 'user_input',
+            content: userContentParts,
+          },
+        ],
       }),
       timeoutPromise,
     ]);
@@ -2363,13 +2294,34 @@ Given any website's scraped identity, ethos, headlines, and CSS colors, invent a
 
   if (!rawText) return null;
 
-  const cleanedJson = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
-  const parsed = JSON.parse(cleanedJson) as Partial<CreativeDirectorBlueprint>;
+  const cleanedJson = rawText
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  const firstBrace = cleanedJson.indexOf('{');
+  const lastBrace = cleanedJson.lastIndexOf('}');
+  const jsonSlice =
+    firstBrace >= 0 && lastBrace > firstBrace
+      ? cleanedJson.slice(firstBrace, lastBrace + 1)
+      : cleanedJson;
+
+  const parsed = JSON.parse(jsonSlice) as {
+    brandName?: string;
+    tagline?: string;
+    vibe?: string;
+    brandEthos?: string;
+    archetype?: WorldArchetypeId;
+    lightingPreset?: LightingPreset;
+    aestheticCluster?: AestheticClusterId;
+    palette?: Partial<StorePalette>;
+    searchKeywords?: Partial<ProductSearchKeywords>;
+    architectNotes?: string[];
+  };
 
   const archetype: WorldArchetypeId =
     parsed.archetype && VALID_ARCHETYPES.has(parsed.archetype)
       ? parsed.archetype
-      : fallback.archetype;
+      : fallbackBlueprint.archetype;
 
   const archetypeBase = buildBrandBlendedPalette(archetype, identity);
   const palette = sanitizeStorePalette(
@@ -2383,139 +2335,922 @@ Given any website's scraped identity, ethos, headlines, and CSS colors, invent a
       ? parsed.lightingPreset
       : archetypeBase.lightingPreset;
 
-  const metalRoughness =
-    typeof parsed.metalRoughness === 'number' && Number.isFinite(parsed.metalRoughness)
-      ? Math.max(0.1, Math.min(0.6, parsed.metalRoughness))
-      : archetypeBase.metalRoughness;
+  const aestheticCluster: AestheticClusterId =
+    parsed.aestheticCluster && VALID_AESTHETIC_CLUSTERS.has(parsed.aestheticCluster)
+      ? parsed.aestheticCluster
+      : mapArchetypeToAestheticCluster(archetype, identity.subVertical) || heuristicCluster;
 
-  const metalness =
-    typeof parsed.metalness === 'number' && Number.isFinite(parsed.metalness)
-      ? Math.max(0.55, Math.min(0.98, parsed.metalness))
-      : archetypeBase.metalness;
+  const defaultKw = DEFAULT_CLUSTER_KEYWORDS[aestheticCluster];
+  const sanitizeKwList = (arr: unknown, fb: string[]): string[] => {
+    if (!Array.isArray(arr)) return fb;
+    const cleaned = arr
+      .map((item) => String(item ?? '').trim().toLowerCase())
+      .filter((s) => s.length >= 2 && s.length <= 36);
+    return cleaned.length > 0 ? cleaned.slice(0, 5) : fb;
+  };
 
-  const brandName =
-    typeof parsed.brandName === 'string' && parsed.brandName.trim()
-      ? parsed.brandName.trim().toUpperCase().slice(0, 38)
-      : fallback.brandName;
-
-  const brandSlug = slugify(brandName);
-  const rawProducts = Array.isArray(parsed.products) ? parsed.products : [];
-
-  const rawApparel = rawProducts.filter((p) => p && VALID_APPAREL_SET.has(p.category as ProductCategory3D));
-  const rawObjects = rawProducts.filter((p) => p && VALID_OBJECT_SET.has(p.category as ProductCategory3D));
-
-  const targetSlots: ReadonlyArray<{ placement: ProductPlacementZone; isApparel: boolean; featured: boolean }> = [
-    { placement: 'hero_rack', isApparel: true, featured: true },
-    { placement: 'capsule_rack', isApparel: true, featured: false },
-    { placement: 'capsule_rack', isApparel: true, featured: false },
-    { placement: 'center_table', isApparel: false, featured: false },
-    { placement: 'left_pedestal', isApparel: false, featured: false },
-    { placement: 'right_pedestal', isApparel: false, featured: false },
-  ];
-
-  const usedShopifyHandles = new Set<string>();
-  let apparelCursor = 0;
-  let objectCursor = 0;
-
-  const normalizedProducts: InventedProductSpec[] = targetSlots.map((slot, idx) => {
-    const fb = fallback.products[idx];
-    const candidate = slot.isApparel ? rawApparel[apparelCursor++] : rawObjects[objectCursor++];
-
-    const category: ProductCategory3D =
-      candidate?.category &&
-      (slot.isApparel
-        ? VALID_APPAREL_SET.has(candidate.category)
-        : VALID_OBJECT_SET.has(candidate.category))
-        ? candidate.category
-        : fb.category;
-
-    const primaryColor = normalizeHexColor(candidate?.primaryColor) ?? fb.primaryColor;
-    const rawAccent = normalizeHexColor(candidate?.accentColor) ?? fb.accentColor;
-    const accentColor = ensureWcagContrast(rawAccent, primaryColor, 3.5);
-    const rawSecondary = normalizeHexColor(candidate?.secondaryColor) ?? fb.secondaryColor;
-    const secondaryColor =
-      wcagContrastRatio(rawSecondary, primaryColor) >= 1.3
-        ? rawSecondary
-        : mixHex(primaryColor, accentColor, 0.25);
-
-    const graphicMotif: ProductGraphicMotif =
-      candidate?.graphicMotif && VALID_MOTIFS.has(candidate.graphicMotif)
-        ? candidate.graphicMotif
-        : fb.graphicMotif;
-
-    const materialFinish: MaterialFinish =
-      candidate?.materialFinish && VALID_FINISHES.has(candidate.materialFinish)
-        ? candidate.materialFinish
-        : defaultMaterialFinishForCategory(category);
-
-    const matchedShopify = matchShopifyInspirationForCategory(
-      category,
-      identity.catalogInspirations,
-      usedShopifyHandles
-    );
-
-    return {
-      id: `inv-${brandSlug}-${idx + 1}-${slot.placement}`,
-      sku: `${identity.monogram}-${categorySkuCode(category)}-0${idx + 1}`,
-      title:
-        typeof candidate?.title === 'string' && candidate.title.trim().length >= 3
-          ? candidate.title.trim().slice(0, 64)
-          : fb.title,
-      subtitle:
-        typeof candidate?.subtitle === 'string' && candidate.subtitle.trim().length >= 3
-          ? candidate.subtitle.trim().slice(0, 76)
-          : fb.subtitle,
-      category,
-      placement: slot.placement,
-      price: parsePriceNumber(candidate?.price, fb.price),
-      primaryColor,
-      secondaryColor,
-      accentColor,
-      graphicHeadline: clampGraphicHeadline(candidate?.graphicHeadline, fb.graphicHeadline),
-      graphicSubtext:
-        typeof candidate?.graphicSubtext === 'string' && candidate.graphicSubtext.trim()
-          ? candidate.graphicSubtext.trim().slice(0, 40)
-          : fb.graphicSubtext,
-      graphicMotif,
-      materialFinish,
-      designRationale:
-        typeof candidate?.designRationale === 'string' && candidate.designRationale.trim().length >= 8
-          ? candidate.designRationale.trim().slice(0, 180)
-          : fb.designRationale,
-      shopifyProductUrl: matchedShopify?.shopifyProductUrl ?? fb.shopifyProductUrl,
-      shopifyVariantId: matchedShopify?.shopifyVariantId ?? fb.shopifyVariantId,
-      featured: slot.featured,
-    };
-  });
-
-  return {
-    brandName,
+  const plan: NeonVisualBrandPlan = {
+    brandName:
+      typeof parsed.brandName === 'string' && parsed.brandName.trim().length >= 2
+        ? parsed.brandName.trim().toUpperCase().slice(0, 38)
+        : fallbackBlueprint.brandName,
     tagline:
-      typeof parsed.tagline === 'string' && parsed.tagline.trim()
-        ? parsed.tagline.trim().slice(0, 76)
-        : fallback.tagline,
+      typeof parsed.tagline === 'string' && parsed.tagline.trim().length >= 3
+        ? parsed.tagline.trim().slice(0, 84)
+        : fallbackBlueprint.tagline,
     vibe:
-      typeof parsed.vibe === 'string' && parsed.vibe.trim()
-        ? parsed.vibe.trim().slice(0, 130)
-        : fallback.vibe,
+      typeof parsed.vibe === 'string' && parsed.vibe.trim().length >= 4
+        ? parsed.vibe.trim().slice(0, 140)
+        : fallbackBlueprint.vibe,
     brandEthos:
-      typeof parsed.brandEthos === 'string' && parsed.brandEthos.trim()
-        ? parsed.brandEthos.trim().slice(0, 240)
-        : fallback.brandEthos,
+      typeof parsed.brandEthos === 'string' && parsed.brandEthos.trim().length >= 10
+        ? parsed.brandEthos.trim().slice(0, 260)
+        : fallbackBlueprint.brandEthos,
     archetype,
     lightingPreset,
-    metalRoughness,
-    metalness,
+    metalRoughness: archetypeBase.metalRoughness,
+    metalness: archetypeBase.metalness,
     palette,
+    aestheticCluster,
+    searchKeywords: {
+      apparel: sanitizeKwList(parsed.searchKeywords?.apparel, defaultKw.apparel),
+      objects: sanitizeKwList(parsed.searchKeywords?.objects, defaultKw.objects),
+      colorWords: sanitizeKwList(parsed.searchKeywords?.colorWords, defaultKw.colorWords),
+    },
     architectNotes:
       Array.isArray(parsed.architectNotes) && parsed.architectNotes.length > 0
         ? parsed.architectNotes.map((n) => String(n).trim()).filter(Boolean).slice(0, 4)
-        : fallback.architectNotes,
-    products: normalizedProducts,
+        : fallbackBlueprint.architectNotes,
+  };
+
+  NEON_VISUAL_PLAN_CACHE.set(cacheKey, {
+    cachedAt: Date.now(),
+    plan,
+  });
+
+  return plan;
+}
+
+// ============================================================================
+// 4. REAL INTERNET SHOPIFY CATALOG SEARCH, PACKSHOT SELECTOR & DECISION-1 RANKING
+// ============================================================================
+
+function normalizeProductTags(tagsRaw: string[] | string | undefined): string[] {
+  if (Array.isArray(tagsRaw)) {
+    return tagsRaw.map((t) => String(t).trim()).filter(Boolean);
+  }
+  if (typeof tagsRaw === 'string') {
+    return tagsRaw
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function optimizeShopifyImageUrl(rawUrl: string): string {
+  const trimmed = decodeHtmlEntities(rawUrl).trim();
+  const withProto = trimmed.startsWith('//') ? `https:${trimmed}` : trimmed;
+  try {
+    const parsed = new URL(withProto);
+    if (parsed.protocol === 'http:') parsed.protocol = 'https:';
+    if (
+      parsed.hostname.includes('shopify.com') ||
+      parsed.pathname.includes('/cdn/shop/')
+    ) {
+      const existingW = Number(parsed.searchParams.get('width') ?? '0');
+      if (!existingW || existingW > 1080 || existingW < 300) {
+        parsed.searchParams.set('width', '960');
+      }
+    }
+    return parsed.toString();
+  } catch {
+    return withProto;
+  }
+}
+
+function extractProductImagesList(p: ShopifyJsonProduct): ShopifyProductImageRaw[] {
+  const list: ShopifyProductImageRaw[] = [];
+  if (Array.isArray(p.images) && p.images.length > 0) {
+    for (const im of p.images) {
+      if (im && (typeof im.src === 'string' || typeof im.url === 'string')) {
+        list.push(im);
+      }
+    }
+  }
+  if (list.length === 0) {
+    if (typeof p.featured_image === 'string' && p.featured_image) {
+      list.push({ src: p.featured_image });
+    } else if (p.featured_image && typeof p.featured_image === 'object') {
+      const src = p.featured_image.url ?? p.featured_image.src;
+      if (src) {
+        list.push({
+          src,
+          width: p.featured_image.width,
+          height: p.featured_image.height,
+          alt: p.featured_image.alt,
+        });
+      }
+    }
+    if (typeof p.image === 'string' && p.image) {
+      list.push({ src: p.image });
+    } else if (p.image && typeof p.image === 'object') {
+      const src = p.image.src ?? p.image.url;
+      if (src) {
+        list.push({
+          src,
+          width: p.image.width,
+          height: p.image.height,
+          alt: p.image.alt,
+        });
+      }
+    }
+  }
+  return list;
+}
+
+/**
+ * Inspects all images of a Shopify product and picks the cleanest isolated studio packshot
+ * (avoiding human models, lifestyle street shots, detail zooms, back views, and size charts).
+ */
+export function pickCleanestPackshotImage(
+  images: ShopifyProductImageRaw[]
+): { url: string; score: number } | null {
+  if (!Array.isArray(images) || images.length === 0) return null;
+
+  let bestUrl: string | null = null;
+  let bestScore = -9999;
+  const total = images.length;
+
+  for (let idx = 0; idx < total; idx++) {
+    const img = images[idx];
+    const rawSrc = (img.src ?? img.url ?? '').trim();
+    if (!rawSrc) continue;
+
+    const cleanPath = rawSrc.split('?')[0];
+    const fileName = cleanPath.split('/').pop() ?? cleanPath;
+    const altText = String(img.alt ?? '');
+    const signalText = `${fileName} ${altText}`.toLowerCase();
+
+    if (/\.(svg|gif)(\b|$)/i.test(fileName)) continue;
+
+    let score = 0;
+
+    // Hard disqualifiers: size charts, fabric guides, care labels, holiday promo banners
+    if (
+      /\b(sizechart|size[-_ ]?chart|fabric[-_ ]?guide|measurement|dimensions|care[-_ ]?guide|spec[-_ ]?sheet|banner|holiday[-_ ]?\d+)\b/i.test(
+        signalText
+      )
+    ) {
+      score -= 260;
+    }
+
+    // Penalize macro close-ups / embroidery / swatch zooms
+    if (
+      /(?:^|[-_ .])(embroidery|closeup|close[-_ ]?up|detail|macro|zoom|swatch|collar[-_ ]?detail|sleeve[-_ ]?detail|pocket[-_ ]?detail|label|tag)(?:[-_ .]|$)/i.test(
+        signalText
+      )
+    ) {
+      score -= 105;
+    }
+
+    // Penalize human model / lifestyle / lookbook / portrait / on-body shots
+    if (
+      /(?:^|[-_ .])(portrait|model|on[-_ ]?body|on[-_ ]?\d+|worn|lookbook|look[-_ ]?\d+|lifestyle|ls|campaign|editorial|street|outdoor|action|fit|wearing|man[-_ ]?pictured|woman[-_ ]?pictured)(?:[-_ .]|$)/i.test(
+        signalText
+      )
+    ) {
+      score -= 115;
+    }
+
+    // Penalize rear/back/interior views so our front garment/object is always front-facing
+    if (/(?:^|[-_ .])(back|rear|reverse|inside|interior|bottom|side)(?:[-_ .]|$)/i.test(signalText)) {
+      score -= 78;
+    }
+
+    // Strong positive signals for isolated studio flat-lay / ghost mannequin / off-body packshots
+    if (
+      /(?:^|[-_ .])(flat|flatlay|flat[-_ ]?lay|packshot|pack[-_ ]?shot|ghost|mannequin|off[-_ ]?body|off[-_ ]?jp|off[-_ ]?\d+|noshadow|no[-_ ]?shadow|isolated|cutout|still|front[-_ ]?flat|pdp|ecom|product)(?:[-_ .]|$)/i.test(
+        signalText
+      )
+    ) {
+      score += 72;
+    }
+
+    if (/(?:^|[-_ .])front(?:[-_ .]|$)/i.test(signalText)) {
+      score += 34;
+    }
+
+    // Transparent or clean white-studio PNGs
+    if (/\.png$/i.test(fileName)) {
+      score += 26;
+    }
+
+    // Numbered `_01` / `-001` / `-1` / `01_` primary studio shot (when not `on_1` or `detail_1`)
+    if (
+      (/(?:^|[-_])0*1\.(?:jpg|jpeg|png|webp)$/i.test(fileName) || /^0*1[-_]/i.test(fileName)) &&
+      !/(?:on|detail|ls|look)[-_ ]?0*1\./i.test(fileName)
+    ) {
+      score += 38;
+    }
+
+    // Square 1:1 studio aspect ratio (brands frequently shoot 4:5 lookbook models + 1:1 isolated packshots)
+    const w = Number(img.width ?? 0);
+    const h = Number(img.height ?? 0);
+    if (w >= 500 && h >= 500) {
+      const ratio = w / h;
+      if (ratio >= 0.93 && ratio <= 1.07) {
+        score += 24;
+      } else if (ratio > 1.45) {
+        // Very wide landscape product image is often a lifestyle banner or size chart
+        score -= 22;
+      }
+    }
+
+    // Positional tie-breaker favoring lead/second/final packshot slot
+    if (idx === 0) score += 14;
+    else if (idx === 1) score += 11;
+    else if (idx === total - 1 && total >= 3) score += 7;
+    else score += Math.max(0, 8 - idx * 2);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestUrl = optimizeShopifyImageUrl(rawSrc);
+    }
+  }
+
+  if (!bestUrl || bestScore <= -140) {
+    return null;
+  }
+
+  return { url: bestUrl, score: bestScore };
+}
+
+/**
+ * Classifies a real Shopify product strictly into Hanging Upper-Body Apparel OR Table/Pedestal Object.
+ */
+function classifyRealShopifyProduct(
+  title: string,
+  productType: string,
+  tags: string[]
+): { kind: 'apparel' | 'object'; category: ProductCategory3D } | null {
+  const primaryText = `${title} ${productType}`.toLowerCase();
+  const fullCorpus = `${title} ${productType} ${tags.slice(0, 10).join(' ')}`.toLowerCase();
+
+  if (EXCLUDED_PRODUCT_RE.test(fullCorpus)) {
+    return null;
+  }
+
+  // 1. Check Physical Table & Pedestal Objects FIRST when title/type clearly names an object
+  const isClearObjectInTitle =
+    /\b(mug|cup|tumbler|kettle|carafe|dripper|server|teaware|cap|ballcap|hat|beanie|tote|carryall|backpack|duffel|bag|book|monograph|screenplay|magazine|zine|journal|notebook|vinyl|lp|candle|fragrance|perfume|eau de|bottle|vessel|cleanser|serum|body wash|hand wash|balm)\b/i.test(
+      primaryText
+    );
+
+  if (isClearObjectInTitle && !STRICT_CLOTHING_FOR_OBJECTS_RE.test(title.toLowerCase())) {
+    if (/\b(mug|cup|tumbler|kettle|carafe|dripper|server|teaware|espresso)\b/i.test(primaryText)) {
+      return { kind: 'object', category: 'ceramic_mug' };
+    }
+    if (/\b(cap|ballcap|hat|beanie|visor)\b/i.test(primaryText)) {
+      return { kind: 'object', category: 'structured_cap' };
+    }
+    if (/\b(tote|carryall|backpack|duffel|bag|pack)\b/i.test(primaryText)) {
+      return { kind: 'object', category: 'canvas_tote' };
+    }
+    if (/\b(book|monograph|screenplay|magazine|zine|journal|notebook|vinyl|record|lp)\b/i.test(primaryText)) {
+      return { kind: 'object', category: 'hardcover_book' };
+    }
+    if (
+      /\b(candle|fragrance|perfume|eau de|bottle|vessel|cleanser|serum|wash|balm|mist|incense)\b/i.test(
+        primaryText
+      )
+    ) {
+      return { kind: 'object', category: 'apothecary_bottle' };
+    }
+  }
+
+  // 2. Check Hanging Upper-Body Apparel (strictly excluding bottoms, socks, underwear, shoes, bags, hats)
+  if (!STRICT_NON_UPPER_APPAREL_RE.test(primaryText)) {
+    if (/\b(hoodie|sweatshirt|crewneck|pullover|fleece)\b/i.test(primaryText)) {
+      return { kind: 'apparel', category: 'heavyweight_hoodie' };
+    }
+    if (
+      /\b(jacket|varsity|bomber|blazer|cardigan|coat|overshirt|chore|anorak|parka|sweater|knit|quarter[- ]?zip|half[- ]?zip|rugby)\b/i.test(
+        primaryText
+      )
+    ) {
+      return { kind: 'apparel', category: 'varsity_jacket' };
+    }
+    if (/\b(tee|t-shirt|tshirt|shirt|polo|jersey|henley|long[- ]?sleeve)\b/i.test(primaryText)) {
+      return { kind: 'apparel', category: 'structured_tshirt' };
+    }
+  }
+
+  return null;
+}
+
+const INFLIGHT_CATALOG_PROMISES = new Map<string, Promise<ShopifyJsonProduct[]>>();
+
+async function fetchCachedDomainProducts(domain: string, timeoutMs = 2600): Promise<ShopifyJsonProduct[]> {
+  const cleanDomain = domain.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const cached = INTERNET_CATALOG_CACHE.get(cleanDomain);
+  if (cached && Date.now() - cached.fetchedAt < CATALOG_CACHE_TTL_MS) {
+    return cached.products;
+  }
+
+  const inflight = INFLIGHT_CATALOG_PROMISES.get(cleanDomain);
+  if (inflight) {
+    return inflight;
+  }
+
+  const reqPromise = (async () => {
+    try {
+      const payload = await fetchJsonSafely(`https://${cleanDomain}/products.json?limit=48`, timeoutMs);
+      const products = extractRawShopifyProductArray(payload);
+      if (products.length > 0) {
+        INTERNET_CATALOG_CACHE.set(cleanDomain, {
+          fetchedAt: Date.now(),
+          products,
+        });
+      }
+      return products;
+    } finally {
+      INFLIGHT_CATALOG_PROMISES.delete(cleanDomain);
+    }
+  })();
+
+  INFLIGHT_CATALOG_PROMISES.set(cleanDomain, reqPromise);
+  return reqPromise;
+}
+
+async function fetchCachedDomainSuggest(
+  domain: string,
+  query: string,
+  timeoutMs = 1500
+): Promise<ShopifyJsonProduct[]> {
+  const cleanDomain = domain.toLowerCase().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const cleanQ = query.trim().toLowerCase();
+  if (!cleanQ) return [];
+
+  const cacheKey = `${cleanDomain}::${cleanQ}`;
+  const cached = INTERNET_SUGGEST_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < CATALOG_CACHE_TTL_MS) {
+    return cached.products;
+  }
+
+  const url = `https://${cleanDomain}/search/suggest.json?q=${encodeURIComponent(cleanQ)}&resources[type]=product&resources[limit]=6`;
+  const payload = await fetchJsonSafely(url, timeoutMs);
+  const products = extractRawShopifyProductArray(payload);
+  INTERNET_SUGGEST_CACHE.set(cacheKey, {
+    fetchedAt: Date.now(),
+    products,
+  });
+  return products;
+}
+
+async function fetchCachedSingleProductByHandle(
+  domain: string,
+  handle: string,
+  timeoutMs = 1050
+): Promise<ShopifyJsonProduct | null> {
+  const cleanHandle = handle.split('?')[0].trim();
+  if (!cleanHandle) return null;
+  const cacheKey = `${domain}::${cleanHandle}`;
+  const cached = INTERNET_PRODUCT_HANDLE_CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < CATALOG_CACHE_TTL_MS) {
+    return cached.product;
+  }
+
+  const payload = await fetchJsonSafely(`https://${domain}/products/${cleanHandle}.json`, timeoutMs);
+  const arr = extractRawShopifyProductArray(payload);
+  const product = arr[0] ?? null;
+  INTERNET_PRODUCT_HANDLE_CACHE.set(cacheKey, {
+    fetchedAt: Date.now(),
+    product,
+  });
+  return product;
+}
+
+function inferProductHexFromTitleAndTags(
+  title: string,
+  tags: string[],
+  fallbackHex: string
+): string {
+  const text = `${title} ${tags.slice(0, 6).join(' ')}`.toLowerCase();
+  if (/\b(black|obsidian|onyx|jet|noir|ink|pitch)\b/.test(text)) return '#181A1E';
+  if (/\b(charcoal|graphite|slate|ash|carbon|smoke)\b/.test(text)) return '#3A3E45';
+  if (/\b(heather|grey|gray|silver|mist|cement)\b/.test(text)) return '#9A9EA4';
+  if (/\b(white|chalk|ivory|optic|milk|snow)\b/.test(text)) return '#F4F2EC';
+  if (/\b(natural|ecru|cream|oat|oatmeal|bone|off-white|canvas|parchment)\b/.test(text)) return '#EAE2D3';
+  if (/\b(tan|sand|khaki|camel|beige|taupe|stone|wheat|field tan)\b/.test(text)) return '#C5AE8E';
+  if (/\b(brown|espresso|chocolate|walnut|amber|cognac|tobacco|rust|terracotta)\b/.test(text)) return '#5C3D28';
+  if (/\b(navy|indigo|abyss|midnight|cobalt|maritime)\b/.test(text)) return '#20304A';
+  if (/\b(blue|sky|cerulean|denim|ocean)\b/.test(text)) return '#3B6E9C';
+  if (/\b(sage|olive|moss|cedar|eucalyptus|pistachio)\b/.test(text)) return '#66755E';
+  if (/\b(forest|emerald|pine|hunter|green|racing green)\b/.test(text)) return '#254736';
+  if (/\b(burgundy|wine|oxblood|maroon|crimson|merlot)\b/.test(text)) return '#6B222B';
+  if (/\b(red|scarlet|vermilion|tomato|coral)\b/.test(text)) return '#C83E32';
+  if (/\b(yellow|mustard|ochre|gold|marigold|sun)\b/.test(text)) return '#D4A438';
+  return fallbackHex;
+}
+
+/**
+ * Searches real public Shopify stores across the matched aesthetic cluster (plus the input URL's own
+ * catalog if it is a Shopify store), extracts clean studio packshots, and builds shortlisted candidates.
+ */
+async function gatherRealInternetProductCandidates(
+  cluster: AestheticClusterId,
+  keywords: ProductSearchKeywords,
+  inputHostname: string,
+  inputBrandName: string,
+  ownShopifyRawProducts: ShopifyJsonProduct[]
+): Promise<{
+  apparelShortlist: RealInternetProductCandidate[];
+  objectShortlist: RealInternetProductCandidate[];
+  totalRawScanned: number;
+}> {
+  const clusterStores = CLUSTER_SHOPIFY_STORES[cluster];
+  const vendorDisplayByDomain = new Map<string, string>(
+    clusterStores.map((s) => [s.domain, s.vendorDisplay])
+  );
+
+  // 1. Fetch `/products.json?limit=48` across cluster stores + surgical `/search/suggest.json` probes
+  const topApparelKw = keywords.apparel[0];
+  const topObjectKw = keywords.objects[0];
+
+  const catalogPromises = clusterStores.map(async (store) => ({
+    domain: store.domain,
+    source: 'catalog' as const,
+    products: await fetchCachedDomainProducts(store.domain, 2600),
+  }));
+
+  const suggestPromises: Array<
+    Promise<{ domain: string; source: 'suggest'; products: ShopifyJsonProduct[] }>
+  > = [];
+
+  if (topApparelKw && clusterStores[0]) {
+    const coreTerms = topApparelKw.split(/\s+/).filter(Boolean);
+    const queryTerm = coreTerms[coreTerms.length - 1] || topApparelKw;
+    suggestPromises.push(
+      fetchCachedDomainSuggest(clusterStores[0].domain, queryTerm, 1500).then((products) => ({
+        domain: clusterStores[0].domain,
+        source: 'suggest' as const,
+        products,
+      }))
+    );
+  }
+  if (topObjectKw && clusterStores[1]) {
+    const coreTerms = topObjectKw.split(/\s+/).filter(Boolean);
+    const queryTerm = coreTerms[coreTerms.length - 1] || topObjectKw;
+    suggestPromises.push(
+      fetchCachedDomainSuggest(clusterStores[1].domain, queryTerm, 1500).then((products) => ({
+        domain: clusterStores[1].domain,
+        source: 'suggest' as const,
+        products,
+      }))
+    );
+  }
+
+  // Guarantee iconic object categories (mug, book, tote, cap, candle) are probed on specialist stores
+  const specialistProbes: Array<[string, string]> =
+    cluster === 'cinema_streetwear'
+      ? [
+          ['actualsource.org', 'book'],
+          ['actualsource.org', 'tote'],
+          ['noahny.com', 'hat'],
+        ]
+      : cluster === 'minimal_tech'
+        ? [
+            ['fellowproducts.com', 'mug'],
+            ['ugmonk.com', 'tote'],
+            ['ladywhiteco.com', 'hoodie'],
+          ]
+        : cluster === 'artisanal_cafe'
+          ? [
+              ['fellowproducts.com', 'mug'],
+              ['malinandgoetz.com', 'candle'],
+              ['kinto-usa.com', 'mug'],
+            ]
+          : [
+              ['rowingblazers.com', 'cap'],
+              ['actualsource.org', 'book'],
+              ['ebbets.com', 'ballcap'],
+            ];
+
+  for (const [specDomain, specQ] of specialistProbes) {
+    suggestPromises.push(
+      fetchCachedDomainSuggest(specDomain, specQ, 1450).then((products) => ({
+        domain: specDomain,
+        source: 'suggest' as const,
+        products,
+      }))
+    );
+  }
+
+  const allBatches = await Promise.all([...catalogPromises, ...suggestPromises]);
+
+  // Merge full `/products.json` records by `domain::handle` so suggest hits inherit full `images[]` when present
+  const mergedByKey = new Map<
+    string,
+    { domain: string; raw: ShopifyJsonProduct; fromSuggestOnly: boolean; isFromInputDomain: boolean }
+  >();
+
+  let totalRawScanned = ownShopifyRawProducts.length;
+
+  const cleanInputHost = inputHostname.toLowerCase().replace(/^www\./, '');
+  if (ownShopifyRawProducts.length > 0) {
+    vendorDisplayByDomain.set(cleanInputHost, toTitleCase(inputBrandName));
+    for (const p of ownShopifyRawProducts) {
+      const handle = String(p.handle ?? '').split('?')[0].trim();
+      if (!handle) continue;
+      mergedByKey.set(`${cleanInputHost}::${handle}`, {
+        domain: cleanInputHost,
+        raw: p,
+        fromSuggestOnly: false,
+        isFromInputDomain: true,
+      });
+    }
+  }
+
+  for (const batch of allBatches) {
+    totalRawScanned += batch.products.length;
+    for (const p of batch.products) {
+      const rawHandle =
+        String(p.handle ?? '') ||
+        (typeof (p as { url?: string }).url === 'string'
+          ? ((p as { url?: string }).url!.match(/\/products\/([^/?#]+)/)?.[1] ?? '')
+          : '');
+      const handle = rawHandle.split('?')[0].trim();
+      if (!handle) continue;
+
+      const key = `${batch.domain}::${handle}`;
+      const existing = mergedByKey.get(key);
+      if (!existing) {
+        mergedByKey.set(key, {
+          domain: batch.domain,
+          raw: p,
+          fromSuggestOnly: batch.source === 'suggest',
+          isFromInputDomain: batch.domain === cleanInputHost,
+        });
+      } else if (existing.fromSuggestOnly && batch.source === 'catalog') {
+        // Upgrade suggest-only entry with full catalog entry containing all `images[]` & `variants[]`
+        mergedByKey.set(key, {
+          domain: batch.domain,
+          raw: p,
+          fromSuggestOnly: false,
+          isFromInputDomain: existing.isFromInputDomain,
+        });
+      }
+    }
+  }
+
+  // Upgrade up to 10 high-value suggest-only items via `/products/<handle>.json` so `pickCleanestPackshotImage`
+  // inspects every product's complete studio image gallery (e.g. picking `_01.jpg` flat-lay over `_02.jpg` model!)
+  const suggestOnlyEntries = [...mergedByKey.values()].filter((entry) => {
+    if (!entry.fromSuggestOnly) return false;
+    const title = decodeHtmlEntities(String(entry.raw.title ?? ''));
+    const pType = decodeHtmlEntities(String(entry.raw.product_type ?? entry.raw.type ?? ''));
+    return classifyRealShopifyProduct(title, pType, normalizeProductTags(entry.raw.tags)) !== null;
+  });
+
+  if (suggestOnlyEntries.length > 0) {
+    await Promise.all(
+      suggestOnlyEntries.slice(0, 4).map(async (entry) => {
+        const handle = String(entry.raw.handle ?? '').split('?')[0].trim();
+        const fullProd = await fetchCachedSingleProductByHandle(entry.domain, handle, 1050);
+        if (fullProd) {
+          entry.raw = fullProd;
+          entry.fromSuggestOnly = false;
+        }
+      })
+    );
+  }
+
+  const apparelCandidates: RealInternetProductCandidate[] = [];
+  const objectCandidates: RealInternetProductCandidate[] = [];
+
+  const allSearchTerms = [
+    ...keywords.apparel,
+    ...keywords.objects,
+    ...keywords.colorWords,
+  ].map((s) => s.toLowerCase());
+
+  for (const [key, entry] of mergedByKey.entries()) {
+    const { domain, raw, isFromInputDomain } = entry;
+    const title = decodeHtmlEntities(String(raw.title ?? '').trim());
+    if (!title || title.length < 3) continue;
+
+    const handle = String(raw.handle ?? slugify(title)).split('?')[0].trim();
+    if (!handle) continue;
+
+    const productType = decodeHtmlEntities(String(raw.product_type ?? raw.type ?? '').trim());
+    const tags = normalizeProductTags(raw.tags);
+
+    const classified = classifyRealShopifyProduct(title, productType, tags);
+    if (!classified) continue;
+
+    const packshot = pickCleanestPackshotImage(extractProductImagesList(raw));
+    if (!packshot) continue;
+
+    const firstVariant =
+      Array.isArray(raw.variants) && raw.variants.length > 0 ? raw.variants[0] : undefined;
+    const price = parsePriceNumber(firstVariant?.price ?? raw.price ?? raw.price_min, 68);
+    if (price < 12 || price > 950) continue;
+
+    const rawVendor = raw.vendor ? decodeHtmlEntities(String(raw.vendor).trim()) : '';
+    const vendorName =
+      vendorDisplayByDomain.get(domain) ||
+      (rawVendor ? toTitleCase(rawVendor) : humanizeDomainRoot(domain.split('.')[0]));
+
+    const textLower = `${title} ${productType} ${tags.slice(0, 8).join(' ')}`.toLowerCase();
+    let kwScore = 0;
+    for (const term of allSearchTerms) {
+      if (term.length >= 3 && textLower.includes(term)) {
+        kwScore += 16;
+      } else {
+        for (const word of term.split(/\s+/)) {
+          if (word.length >= 3 && textLower.includes(word)) {
+            kwScore += 7;
+          }
+        }
+      }
+    }
+
+    const relevanceScore =
+      packshot.score +
+      kwScore +
+      (isFromInputDomain ? 42 : 0);
+
+    const candidate: RealInternetProductCandidate = {
+      key,
+      domain,
+      vendorName,
+      title,
+      handle,
+      productType,
+      tags,
+      price,
+      productUrl: `https://${domain}/products/${handle}`,
+      variantId: firstVariant?.id !== undefined ? String(firstVariant.id) : undefined,
+      packshotUrl: packshot.url,
+      packshotScore: packshot.score,
+      kind: classified.kind,
+      category: classified.category,
+      isFromInputDomain,
+      relevanceScore,
+    };
+
+    if (classified.kind === 'apparel') {
+      apparelCandidates.push(candidate);
+    } else {
+      objectCandidates.push(candidate);
+    }
+  }
+
+  // Pick a diverse top-6 shortlist for apparel & top-6 shortlist for objects across categories & stores
+  const pickDiverseShortlist = (
+    pool: RealInternetProductCandidate[],
+    targetCategories: readonly ProductCategory3D[],
+    limit: number
+  ): RealInternetProductCandidate[] => {
+    const sorted = [...pool].sort((a, b) => b.relevanceScore - a.relevanceScore);
+    const chosen: RealInternetProductCandidate[] = [];
+    const chosenKeys = new Set<string>();
+    const perDomainCount = new Map<string, number>();
+
+    // Pass 1: ensure at least one strong candidate from each category across distinct stores
+    for (const cat of targetCategories) {
+      const match = sorted.find(
+        (c) =>
+          c.category === cat &&
+          !chosenKeys.has(c.key) &&
+          (perDomainCount.get(c.domain) ?? 0) < 2
+      );
+      if (match && chosen.length < limit) {
+        chosen.push(match);
+        chosenKeys.add(match.key);
+        perDomainCount.set(match.domain, (perDomainCount.get(match.domain) ?? 0) + 1);
+      }
+    }
+
+    // Pass 2: fill remaining shortlist slots with highest-scoring diverse candidates
+    for (const c of sorted) {
+      if (chosen.length >= limit) break;
+      if (chosenKeys.has(c.key)) continue;
+      if ((perDomainCount.get(c.domain) ?? 0) >= 2) continue;
+      chosen.push(c);
+      chosenKeys.add(c.key);
+      perDomainCount.set(c.domain, (perDomainCount.get(c.domain) ?? 0) + 1);
+    }
+
+    // Pass 3: relax domain cap if needed
+    for (const c of sorted) {
+      if (chosen.length >= limit) break;
+      if (chosenKeys.has(c.key)) continue;
+      chosen.push(c);
+      chosenKeys.add(c.key);
+    }
+
+    return chosen;
+  };
+
+  return {
+    apparelShortlist: pickDiverseShortlist(apparelCandidates, HANGING_APPAREL_CATEGORIES, 6),
+    objectShortlist: pickDiverseShortlist(objectCandidates, PEDESTAL_OBJECT_CATEGORIES, 6),
+    totalRawScanned,
   };
 }
 
-function productSpecToGarmentAsset(spec: InventedProductSpec, featured: boolean): GarmentAssetSet {
+/**
+ * Scores up to 12 candidate internet products (6 apparel + 6 objects) in ONE single ~230ms call
+ * to `gemini-decision-1` (`v1beta`) to select the calibrated top 3 apparel + top 3 objects.
+ */
+async function scoreShortlistWithGeminiDecision1(
+  apiKey: string,
+  decisionsModel: string,
+  brandName: string,
+  vibe: string,
+  brandEthos: string,
+  archetype: WorldArchetypeId,
+  cluster: AestheticClusterId,
+  palette: StorePalette,
+  shortlist: RealInternetProductCandidate[]
+): Promise<boolean> {
+  if (shortlist.length === 0) return false;
+
+  const aiBeta = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
+  const questions: Record<string, { type: 'noul'; instructions: string }> = {};
+
+  shortlist.forEach((cand, idx) => {
+    questions[`cand_${idx}`] = {
+      type: 'noul',
+      instructions: `Candidate #${idx + 1}: "${cand.title}" by ${cand.vendorName} ($${cand.price}, category=${cand.category}, store=${cand.domain}, type="${cand.productType || cand.kind}"). Does this real product's style, color, and category strongly fit ${brandName}'s visual aesthetic and 3D flagship store concept?`,
+    };
+  });
+
+  const sharedInput = `Target Brand Storefront Concept:
+Brand: ${brandName}
+Archetype: ${archetype} (Cluster: ${cluster})
+Visual Vibe: ${vibe}
+Ethos: ${brandEthos}
+Store Palette: wall=${palette.wall}, floor=${palette.floor}, accent=${palette.accent}`;
+
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error('gemini-decision-1 ranking timed out'));
+    }, 3400);
+  });
+
+  try {
+    const decisionRes = await Promise.race([
+      aiBeta.decisions.create({
+        model: decisionsModel,
+        input: sharedInput,
+        questions,
+      }),
+      timeoutPromise,
+    ]);
+
+    let anyScored = false;
+    shortlist.forEach((cand, idx) => {
+      const ans = decisionRes.answers?.[`cand_${idx}`];
+      if (ans && ans.type === 'noul' && typeof ans.noul === 'number') {
+        cand.decisionProbability = ans.noul;
+        cand.decisionConfidence = ans.confidence;
+        anyScored = true;
+      }
+    });
+    return anyScored;
+  } catch {
+    return false;
+  } finally {
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
+function selectWinningProducts(
+  apparelShortlist: RealInternetProductCandidate[],
+  objectShortlist: RealInternetProductCandidate[]
+): {
+  winningApparel: RealInternetProductCandidate[];
+  winningObjects: RealInternetProductCandidate[];
+} {
+  const compositeScore = (c: RealInternetProductCandidate): number => {
+    const decisionTerm =
+      typeof c.decisionProbability === 'number' ? c.decisionProbability * 100 : 50;
+    const packshotTerm = Math.min(40, Math.max(-20, c.packshotScore * 0.25));
+    const homeBonus = c.isFromInputDomain ? 18 : 0;
+    return decisionTerm + packshotTerm + homeBonus;
+  };
+
+  const rankedApparel = [...apparelShortlist].sort((a, b) => compositeScore(b) - compositeScore(a));
+  const winningApparel: RealInternetProductCandidate[] = [];
+  const usedApparelCategories = new Set<ProductCategory3D>();
+
+  for (const cand of rankedApparel) {
+    if (winningApparel.length >= 3) break;
+    if (winningApparel.length === 0 || !usedApparelCategories.has(cand.category)) {
+      winningApparel.push(cand);
+      usedApparelCategories.add(cand.category);
+    }
+  }
+  for (const cand of rankedApparel) {
+    if (winningApparel.length >= 3) break;
+    if (!winningApparel.some((w) => w.key === cand.key)) {
+      winningApparel.push(cand);
+    }
+  }
+
+  // Re-sort winning apparel so the highest calibrated piece takes the Hero Faceout Stand (index 0)
+  winningApparel.sort((a, b) => compositeScore(b) - compositeScore(a));
+
+  const rankedObjects = [...objectShortlist].sort((a, b) => compositeScore(b) - compositeScore(a));
+  const winningObjects: RealInternetProductCandidate[] = [];
+  const usedObjectCategories = new Set<ProductCategory3D>();
+
+  // Strongly prefer 3 distinct physical object categories across center_table, left_pedestal & right_pedestal
+  for (const cand of rankedObjects) {
+    if (winningObjects.length >= 3) break;
+    if (!usedObjectCategories.has(cand.category)) {
+      winningObjects.push(cand);
+      usedObjectCategories.add(cand.category);
+    }
+  }
+  for (const cand of rankedObjects) {
+    if (winningObjects.length >= 3) break;
+    if (!winningObjects.some((w) => w.key === cand.key)) {
+      winningObjects.push(cand);
+    }
+  }
+
+  return { winningApparel, winningObjects };
+}
+
+function buildRealProductSpecFromCandidate(
+  cand: RealInternetProductCandidate,
+  placement: ProductPlacementZone,
+  featured: boolean,
+  slotIndex: number,
+  brandName: string,
+  monogram: string,
+  vibe: string,
+  palette: StorePalette,
+  hadInitialPhotos: boolean
+): InventedProductSpec {
+  const brandSlug = slugify(brandName);
+  const proxiedImageUrl = toProxiedImageUrl(cand.packshotUrl);
+
+  const fallbackBodyHex = slotIndex % 2 === 0 ? '#1C1E24' : '#EFEBE2';
+  const primaryColor = inferProductHexFromTitleAndTags(cand.title, cand.tags, fallbackBodyHex);
+  const accentColor = ensureWcagContrast(palette.accent, primaryColor, 3.4);
+  const secondaryColor = mixHex(primaryColor, palette.plinth, 0.35);
+
+  const fitPct =
+    typeof cand.decisionProbability === 'number'
+      ? ` (${Math.round(Math.max(0.62, cand.decisionProbability) * 100)}% Decision-1 visual fit)`
+      : '';
+
+  const photoAnchorPhrase = hadInitialPhotos
+    ? `${brandName}'s initial website photography and ${palette.accent} palette`
+    : `${brandName}'s "${vibe.slice(0, 56)}" visual identity`;
+
+  const designRationale = `Sourced live from ${cand.vendorName} (${cand.domain})${fitPct} — pairs clean ${cand.category.replace('_', ' ')} proportions with ${photoAnchorPhrase}.`;
+
+  return {
+    id: `matched-${brandSlug}-${slotIndex + 1}-${placement}`,
+    sku: `${monogram}-${categorySkuCode(cand.category)}-0${slotIndex + 1}`,
+    title: cand.title.slice(0, 68),
+    subtitle: `${cand.vendorName} · Matched via Gemini 4`,
+    category: cand.category,
+    placement,
+    price: cand.price,
+    primaryColor,
+    secondaryColor,
+    accentColor,
+    graphicHeadline: clampGraphicHeadline(cand.vendorName, monogram),
+    graphicSubtext: cand.domain.toUpperCase().slice(0, 36),
+    graphicMotif: 'minimal_typo',
+    materialFinish: defaultMaterialFinishForCategory(cand.category),
+    designRationale,
+    shopifyProductUrl: cand.productUrl,
+    shopifyVariantId: cand.variantId,
+    featured,
+    customCutoutUrl: proxiedImageUrl,
+  };
+}
+
+/**
+ * Builds a `GarmentAssetSet` for `BoutiqueRack` WITHOUT `productSpec` so `BoutiqueRack` renders
+ * our photorealistic CIELAB studio cutout `<HangingGarment>` (never parametric clay tubes!).
+ */
+function buildPhotorealisticRackGarmentAsset(
+  spec: InventedProductSpec,
+  featured: boolean
+): GarmentAssetSet {
+  const proxiedUrl = spec.customCutoutUrl ?? '';
   return {
     id: spec.id,
     sku: spec.sku,
@@ -2523,11 +3258,16 @@ function productSpecToGarmentAsset(spec: InventedProductSpec, featured: boolean)
     subtitle: spec.subtitle,
     price: spec.price,
     featured,
-    productSpec: { ...spec, featured },
-    rawUrl: '',
+    // Intentionally omit `productSpec` so BoutiqueRack + App render `<HangingGarment>` cutout!
+    rawUrl: proxiedUrl,
+    frontCutoutUrl: proxiedUrl,
     dominantHex: spec.primaryColor,
   };
 }
+
+// ============================================================================
+// 5. HTTP HELPERS, IMAGE PROXY & MAIN `/api/ingest-url` HANDLER
+// ============================================================================
 
 function readJsonBody(req: MinimalReq, maxBytes = 65536): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -2567,7 +3307,7 @@ function sendJson(res: MinimalRes, statusCode: number, payload: unknown): void {
   res.end(body);
 }
 
-async function fetchJsonSafely(url: string, timeoutMs = 1700): Promise<unknown | null> {
+async function fetchJsonSafely(url: string, timeoutMs = 1700, allowRetry429 = true): Promise<unknown | null> {
   try {
     const res = await fetch(url, {
       headers: {
@@ -2578,6 +3318,10 @@ async function fetchJsonSafely(url: string, timeoutMs = 1700): Promise<unknown |
       redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs),
     });
+    if (res.status === 429 && allowRetry429) {
+      await new Promise((r) => setTimeout(r, 950));
+      return fetchJsonSafely(url, timeoutMs, false);
+    }
     if (!res.ok) return null;
     const ct = (res.headers.get('content-type') ?? '').toLowerCase();
     if (!ct.includes('json') && !ct.includes('javascript')) return null;
@@ -2589,7 +3333,7 @@ async function fetchJsonSafely(url: string, timeoutMs = 1700): Promise<unknown |
 
 async function fetchHtmlSafely(
   url: string,
-  timeoutMs = 3200
+  timeoutMs = 3000
 ): Promise<{ html: string; finalOrigin: string } | null> {
   try {
     const res = await fetch(url, {
@@ -2622,7 +3366,7 @@ async function fetchHtmlSafely(
 async function fetchFirstStylesheetSnippet(
   html: string,
   baseOrigin: string,
-  timeoutMs = 650
+  timeoutMs = 620
 ): Promise<string> {
   const linkRe = /<link\b[^>]+rel=["']stylesheet["'][^>]*>/gi;
   let m: RegExpExecArray | null;
@@ -2683,7 +3427,8 @@ async function handleProxyImageRequest(reqUrl: URL, res: MinimalRes): Promise<vo
     const upstream = await fetch(cacheKey, {
       headers: {
         'User-Agent': BROWSER_USER_AGENT,
-        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        // Request standard canvas-decodable formats (webp/png/jpeg)
+        Accept: 'image/webp,image/png,image/jpeg,image/*;q=0.9,*/*;q=0.5',
         'Accept-Language': 'en-US,en;q=0.9',
         Referer: `${targetUrl.origin}/`,
       },
@@ -2710,17 +3455,7 @@ async function handleProxyImageRequest(reqUrl: URL, res: MinimalRes): Promise<vo
       return;
     }
 
-    if (bytes.byteLength <= 4 * 1024 * 1024) {
-      if (IMAGE_CACHE.size >= MAX_IMAGE_CACHE_ENTRIES) {
-        const oldestKey = IMAGE_CACHE.keys().next().value;
-        if (oldestKey) IMAGE_CACHE.delete(oldestKey);
-      }
-      IMAGE_CACHE.set(cacheKey, {
-        bytes,
-        contentType: rawContentType,
-        cachedAt: Date.now(),
-      });
-    }
+    putInImageCache(cacheKey, bytes, rawContentType);
 
     res.statusCode = 200;
     res.setHeader('Content-Type', rawContentType);
@@ -2735,6 +3470,11 @@ async function handleProxyImageRequest(reqUrl: URL, res: MinimalRes): Promise<vo
     });
   }
 }
+
+const INGEST_RESPONSE_CACHE = new Map<
+  string,
+  { cachedAt: number; payload: IngestUrlResponsePayload }
+>();
 
 async function handleIngestUrlRequest(
   req: MinimalReq,
@@ -2758,18 +3498,36 @@ async function handleIngestUrlRequest(
     return;
   }
 
+  const normalizedUrlKey = targetUrl.toString();
+  const cachedIngest = INGEST_RESPONSE_CACHE.get(normalizedUrlKey);
+  if (
+    cachedIngest &&
+    Date.now() - cachedIngest.cachedAt < CATALOG_CACHE_TTL_MS &&
+    body.forceRefresh !== true
+  ) {
+    const freshClone: IngestUrlResponsePayload = {
+      ...cachedIngest.payload,
+      storeConfig: {
+        ...cachedIngest.payload.storeConfig,
+        id: `ingested-${slugify(targetUrl.hostname)}-${Date.now()}`,
+      },
+    };
+    sendJson(res, 200, freshClone);
+    return;
+  }
+
   const collectionHandle = targetUrl.pathname.match(/\/collections\/([^/?#]+)/i)?.[1];
   const productHandle = targetUrl.pathname.match(/\/products\/([^/?#]+)/i)?.[1];
 
-  // Start HTML fetch & optional Shopify catalog probes concurrently, avoiding slow hangs on non-Shopify sites
-  const htmlPromise = fetchHtmlSafely(targetUrl.toString(), 3200);
+  // 1. Fetch input website HTML & optional own Shopify catalog concurrently
+  const htmlPromise = fetchHtmlSafely(targetUrl.toString(), 3000);
   const singleProductPromise = productHandle
-    ? fetchJsonSafely(`${targetUrl.origin}/products/${productHandle}.json`, 1700)
+    ? fetchJsonSafely(`${targetUrl.origin}/products/${productHandle}.json`, 1600)
     : Promise.resolve(null);
   const collectionPromise = collectionHandle
-    ? fetchJsonSafely(`${targetUrl.origin}/collections/${collectionHandle}/products.json?limit=12`, 1700)
+    ? fetchJsonSafely(`${targetUrl.origin}/collections/${collectionHandle}/products.json?limit=24`, 1600)
     : Promise.resolve(null);
-  const rootProductsPromise = fetchJsonSafely(`${targetUrl.origin}/products.json?limit=12`, 1600);
+  const rootProductsPromise = fetchJsonSafely(`${targetUrl.origin}/products.json?limit=24`, 1500);
 
   const htmlResult = await htmlPromise;
   const html = htmlResult?.html ?? '';
@@ -2791,6 +3549,12 @@ async function handleIngestUrlRequest(
         ]),
       ]);
 
+  const ownShopifyRawProducts: ShopifyJsonProduct[] = [
+    ...extractRawShopifyProductArray(singleProductJson),
+    ...extractRawShopifyProductArray(collectionJson),
+    ...extractRawShopifyProductArray(rootProductsJson),
+  ];
+
   const { hostname, domainRoot, tld } = parseHostnameParts(targetUrl);
 
   const rawTitleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
@@ -2807,7 +3571,6 @@ async function handleIngestUrlRequest(
   const { headlines, manifestoSentences, navLabels, jsonLdOrgName, jsonLdInspirations } =
     extractHeadlinesAndCopy(html);
 
-  // Collect optional real catalog inspirations (links/pricing only — NEVER raw scraped webpage images!)
   const shopifyInspirations: RealCatalogInspiration[] = [
     ...(singleProductJson ? parseShopifyCatalogInspirations(singleProductJson, effectiveOrigin) : []),
     ...(collectionJson ? parseShopifyCatalogInspirations(collectionJson, effectiveOrigin) : []),
@@ -2824,10 +3587,9 @@ async function handleIngestUrlRequest(
   const catalogInspirations =
     shopifyInspirations.length > 0 ? shopifyInspirations : jsonLdInspirations;
 
-  // Quick external CSS sniff ONLY if inline HTML had almost no brand color declarations
   let colorProfile = extractDeepColorProfile(html, '', domainRoot, themeColorRaw);
   if (html && colorProfile.allDistinctHexes.length < 2) {
-    const extCss = await fetchFirstStylesheetSnippet(html, effectiveOrigin, 620);
+    const extCss = await fetchFirstStylesheetSnippet(html, effectiveOrigin, 580);
     if (extCss) {
       colorProfile = extractDeepColorProfile(html, extCss, domainRoot, themeColorRaw);
     }
@@ -2886,91 +3648,253 @@ async function handleIngestUrlRequest(
     looksLikeShopify,
   };
 
-  // Instant <5ms deterministic Creative Director baseline & fallback
   const deterministicBlueprint = inventDeterministicBrandWorld(identity);
+  const heuristicCluster = mapArchetypeToAestheticCluster(recommendedArchetype, subVertical);
 
-  // Optional Gemini 4 Creative Director (`gemini-4-argon` or `gemini-4-carbon`, 5.5s max budget)
-  const env = readRuntimeEnv(viteEnv);
-  const geminiKey = (env.GEMINI_API_KEY || env.GOOGLE_API_KEY)?.trim();
-  const geminiModel = env.GEMINI_ARCHITECT_MODEL?.trim() || 'gemini-4-argon';
+  // 2. Extract 1–3 initial website photos & download up to 2 (`<= 1.5s`) while pre-warming cluster catalogs!
+  const candidateInitialPhotoUrls = extractInitialWebsitePhotoUrls(
+    html,
+    effectiveOrigin,
+    ownShopifyRawProducts
+  );
 
-  let usedGemini = false;
-  let finalBlueprint: CreativeDirectorBlueprint = deterministicBlueprint;
+  const prewarmPromise = Promise.all(
+    CLUSTER_SHOPIFY_STORES[heuristicCluster].map((s) => fetchCachedDomainProducts(s.domain, 2400))
+  );
 
-  if (geminiKey && !/^your_|^insert_|^placeholder/i.test(geminiKey)) {
-    try {
-      const geminiBlueprint = await tryInventWithGemini(
-        geminiKey,
-        geminiModel,
-        identity,
-        deterministicBlueprint
-      );
-      if (geminiBlueprint) {
-        finalBlueprint = geminiBlueprint;
-        usedGemini = true;
-      }
-    } catch {
-      usedGemini = false;
+  const downloadedInitialPhotos = await downloadInitialPhotosForVision(
+    candidateInitialPhotoUrls,
+    1500
+  );
+
+  // Build proxied `initialPhotoUrls` (downloaded verified photos first, then remaining extracted candidates)
+  const initialPhotoUrls: string[] = [];
+  for (const dl of downloadedInitialPhotos) {
+    if (!initialPhotoUrls.includes(dl.proxiedUrl)) {
+      initialPhotoUrls.push(dl.proxiedUrl);
+    }
+  }
+  for (const rawCandidate of candidateInitialPhotoUrls) {
+    if (initialPhotoUrls.length >= 3) break;
+    const proxied = toProxiedImageUrl(rawCandidate);
+    if (!initialPhotoUrls.includes(proxied)) {
+      initialPhotoUrls.push(proxied);
     }
   }
 
-  const heroSpec = finalBlueprint.products.find((p) => p.placement === 'hero_rack') ?? finalBlueprint.products[0];
-  const capsuleSpecs = finalBlueprint.products
-    .filter((p) => p.placement === 'capsule_rack' && p.id !== heroSpec.id)
-    .slice(0, 2);
+  // 3. Run Multimodal `gemini-4-neon` Visual Brand & Product Query Planner
+  const env = readRuntimeEnv(viteEnv);
+  const geminiKey = (env.GEMINI_API_KEY || env.GOOGLE_API_KEY)?.trim();
+  const neonModel = env.GEMINI_VISION_MODEL?.trim() || 'gemini-4-neon';
+  const decisionsModel = env.GEMINI_DECISIONS_MODEL?.trim() || 'gemini-decision-1';
+  const hasValidGeminiKey = Boolean(geminiKey && !/^your_|^insert_|^placeholder/i.test(geminiKey));
 
-  const heroGarmentAsset = productSpecToGarmentAsset(heroSpec, true);
-  const capsuleGarmentAssets = capsuleSpecs.map((spec) => productSpecToGarmentAsset(spec, false));
+  let usedNeon = false;
+  let neonPlan: NeonVisualBrandPlan | null = null;
+
+  if (hasValidGeminiKey && geminiKey) {
+    try {
+      neonPlan = await planBrandAndQueriesWithGeminiNeon(
+        geminiKey,
+        neonModel,
+        identity,
+        downloadedInitialPhotos,
+        deterministicBlueprint,
+        heuristicCluster
+      );
+      if (neonPlan) {
+        usedNeon = true;
+      }
+    } catch {
+      usedNeon = false;
+    }
+  }
+
+  await prewarmPromise.catch(() => null);
+
+  const activeCluster: AestheticClusterId = neonPlan?.aestheticCluster ?? heuristicCluster;
+  const activeKeywords: ProductSearchKeywords =
+    neonPlan?.searchKeywords ?? DEFAULT_CLUSTER_KEYWORDS[activeCluster];
+
+  const finalBrandName = neonPlan?.brandName ?? deterministicBlueprint.brandName;
+  const finalTagline = neonPlan?.tagline ?? deterministicBlueprint.tagline;
+  const finalVibe = neonPlan?.vibe ?? deterministicBlueprint.vibe;
+  const finalBrandEthos = neonPlan?.brandEthos ?? deterministicBlueprint.brandEthos;
+  const finalArchetype = neonPlan?.archetype ?? deterministicBlueprint.archetype;
+  const finalLighting = neonPlan?.lightingPreset ?? deterministicBlueprint.lightingPreset;
+  const finalPalette = neonPlan?.palette ?? deterministicBlueprint.palette;
+  const finalMetalRoughness = neonPlan?.metalRoughness ?? deterministicBlueprint.metalRoughness;
+  const finalMetalness = neonPlan?.metalness ?? deterministicBlueprint.metalness;
+
+  // 4. Pull REAL matching products from live multi-store Shopify catalogs across the internet
+  const { apparelShortlist, objectShortlist, totalRawScanned } =
+    await gatherRealInternetProductCandidates(
+      activeCluster,
+      activeKeywords,
+      hostname,
+      finalBrandName,
+      ownShopifyRawProducts
+    );
+
+  // 5. Calibrated single-pass ranking via `gemini-decision-1` (`v1beta`, ~230ms!)
+  const combinedShortlist = [...apparelShortlist, ...objectShortlist];
+  let usedDecision = false;
+  if (hasValidGeminiKey && geminiKey && combinedShortlist.length > 0) {
+    usedDecision = await scoreShortlistWithGeminiDecision1(
+      geminiKey,
+      decisionsModel,
+      finalBrandName,
+      finalVibe,
+      finalBrandEthos,
+      finalArchetype,
+      activeCluster,
+      finalPalette,
+      combinedShortlist
+    );
+  }
+
+  const { winningApparel, winningObjects } = selectWinningProducts(
+    apparelShortlist,
+    objectShortlist
+  );
+
+  // 6. Populate `StoreConfig.products` (all 6 real internet products) & `StoreConfig.racks[0..1]`
+  const targetSlots: ReadonlyArray<{
+    placement: ProductPlacementZone;
+    isApparel: boolean;
+    featured: boolean;
+  }> = [
+    { placement: 'hero_rack', isApparel: true, featured: true },
+    { placement: 'capsule_rack', isApparel: true, featured: false },
+    { placement: 'capsule_rack', isApparel: true, featured: false },
+    { placement: 'center_table', isApparel: false, featured: false },
+    { placement: 'left_pedestal', isApparel: false, featured: false },
+    { placement: 'right_pedestal', isApparel: false, featured: false },
+  ];
+
+  let appIdx = 0;
+  let objIdx = 0;
+  const matchedDomainsSet = new Set<string>();
+  const hadInitialPhotos = initialPhotoUrls.length > 0;
+
+  const finalProducts: InventedProductSpec[] = targetSlots.map((slot, slotIdx) => {
+    const realCand = slot.isApparel ? winningApparel[appIdx++] : winningObjects[objIdx++];
+    if (realCand) {
+      matchedDomainsSet.add(realCand.domain);
+      return buildRealProductSpecFromCandidate(
+        realCand,
+        slot.placement,
+        slot.featured,
+        slotIdx,
+        finalBrandName,
+        monogram,
+        finalVibe,
+        finalPalette,
+        hadInitialPhotos
+      );
+    }
+    return deterministicBlueprint.products[slotIdx];
+  });
+
+  const heroSpec = finalProducts[0];
+  const capsuleSpecs = finalProducts.slice(1, 3);
+
+  const heroRackItem: GarmentAssetSet = heroSpec.customCutoutUrl
+    ? buildPhotorealisticRackGarmentAsset(heroSpec, true)
+    : {
+        id: heroSpec.id,
+        sku: heroSpec.sku,
+        title: heroSpec.title,
+        subtitle: heroSpec.subtitle,
+        price: heroSpec.price,
+        featured: true,
+        rawUrl: '',
+        dominantHex: heroSpec.primaryColor,
+      };
+
+  const capsuleRackItems: GarmentAssetSet[] = capsuleSpecs.map((spec) =>
+    spec.customCutoutUrl
+      ? buildPhotorealisticRackGarmentAsset(spec, false)
+      : {
+          id: spec.id,
+          sku: spec.sku,
+          title: spec.title,
+          subtitle: spec.subtitle,
+          price: spec.price,
+          featured: false,
+          rawUrl: '',
+          dominantHex: spec.primaryColor,
+        }
+  );
 
   const racks: RackPlacement[] = [
     {
       id: 'ingested-hero-faceout',
-      label: `${finalBlueprint.brandName} Hero Stand`,
+      label: `${finalBrandName} Hero Stand`,
       position: [0, 0, 0],
       rotationY: 0,
       style: 'hero_faceout',
-      items: [heroGarmentAsset],
+      items: [heroRackItem],
     },
   ];
 
-  if (capsuleGarmentAssets.length > 0) {
+  if (capsuleRackItems.length > 0) {
     racks.push({
       id: 'ingested-capsule-rail',
-      label: `${finalBlueprint.brandName} Capsule Rail`,
+      label: `${finalBrandName} Capsule Rail`,
       position: [-1.58, 0, -0.58],
       rotationY: 0.34,
       style: 'capsule_rail',
-      items: capsuleGarmentAssets,
+      items: capsuleRackItems,
     });
   }
 
+  const matchedStoreDomains = [...matchedDomainsSet];
+  const baseArchitectNotes = neonPlan?.architectNotes ?? deterministicBlueprint.architectNotes;
+  const provenanceNote =
+    matchedStoreDomains.length > 0
+      ? `Matched 6 real internet products across ${matchedStoreDomains.join(', ')} using Gemini 4 Neon initial-photo vision + Gemini Decision 1 calibrated ranking.`
+      : undefined;
+
+  const architectNotes = provenanceNote
+    ? [...baseArchitectNotes.slice(0, 3), provenanceNote]
+    : baseArchitectNotes;
+
   const storeConfig: StoreConfig = {
     id: `ingested-${slugify(hostname)}-${Date.now()}`,
-    brandName: finalBlueprint.brandName,
-    tagline: finalBlueprint.tagline,
-    vibe: finalBlueprint.vibe,
-    archetype: finalBlueprint.archetype,
+    brandName: finalBrandName,
+    tagline: finalTagline,
+    vibe: finalVibe,
+    archetype: finalArchetype,
     sourceUrl: targetUrl.toString(),
-    brandEthos: finalBlueprint.brandEthos,
-    palette: finalBlueprint.palette,
-    metalRoughness: finalBlueprint.metalRoughness,
-    metalness: finalBlueprint.metalness,
-    lightingPreset: finalBlueprint.lightingPreset,
+    brandEthos: finalBrandEthos,
+    palette: finalPalette,
+    metalRoughness: finalMetalRoughness,
+    metalness: finalMetalness,
+    lightingPreset: finalLighting,
     textures: {},
     racks,
-    products: finalBlueprint.products,
-    architectNotes: finalBlueprint.architectNotes,
+    products: finalProducts,
+    architectNotes,
   };
 
   const responsePayload: IngestUrlResponsePayload = {
     storeConfig,
-    rawProductCount:
-      catalogInspirations.length > 0
-        ? catalogInspirations.length
-        : finalBlueprint.products.length,
-    sourceType,
-    usedGemini,
+    rawProductCount: totalRawScanned > 0 ? totalRawScanned : finalProducts.length,
+    sourceType: matchedStoreDomains.length > 0 ? 'shopify' : sourceType,
+    usedGemini: usedNeon || usedDecision,
+    usedDecision,
+    initialPhotoUrls,
+    matchedStoreDomains,
+    aestheticCluster: activeCluster,
   };
+
+  if (matchedStoreDomains.length > 0) {
+    INGEST_RESPONSE_CACHE.set(normalizedUrlKey, {
+      cachedAt: Date.now(),
+      payload: responsePayload,
+    });
+  }
 
   sendJson(res, 200, responsePayload);
 }

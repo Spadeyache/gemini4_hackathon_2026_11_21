@@ -51,3 +51,4 @@ pnpm-debug.log*
 !public/
 !public/assets/
 !public/assets/**
+public/assets/studio-cache/

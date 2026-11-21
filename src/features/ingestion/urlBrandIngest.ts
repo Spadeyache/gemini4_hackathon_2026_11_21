@@ -53,6 +53,10 @@ export interface BrandIngestSummary {
   pedestalObjectCount: number;
   sourceType: IngestSourceType;
   usedGemini: boolean;
+  usedDecision: boolean;
+  initialPhotoUrls: string[];
+  matchedProductThumbUrls: string[];
+  matchedStoreDomains: string[];
   rawProductCount: number;
   processedGarmentCount: number;
   heroGarmentId: string;
@@ -71,6 +75,9 @@ interface IngestApiResponse {
   rawProductCount: number;
   sourceType: IngestSourceType;
   usedGemini: boolean;
+  usedDecision?: boolean;
+  initialPhotoUrls?: string[];
+  matchedStoreDomains?: string[];
   error?: string;
 }
 
@@ -105,11 +112,12 @@ function canvasTextureToDataUrl(tex: THREE.CanvasTexture): string | undefined {
 }
 
 /**
- * End-to-end client Creative Director ingestion pipeline (~1–3s total):
- * 1. Calls `POST /api/ingest-url` to parse website identity, ethos, CSS colors & invent a 6-product 3D line + WorldArchetypeId
- * 2. Skips unnecessary slow image cutouts for parametric 3D `productSpec` garments, running browser cutouts
- *    ONLY when an item explicitly carries a verified `customCutoutUrl`
- * 3. Returns `{ storeConfig, resolvedTexturesById, summary }` ready for instant 3D showroom construction
+ * End-to-end multimodal website photo -> real internet product curation pipeline:
+ * 1. Calls `POST /api/ingest-url` to analyze initial site photos via `gemini-4-neon`, pull matching
+ *    real products from live public Shopify catalogs, and rank the top 6 via `gemini-decision-1`.
+ * 2. Runs `processGarmentInBrowser(item.rawUrl, tolerance)` in parallel across all pulled real
+ *    apparel photos for crisp CIELAB background cutouts, synthesized backs & Sobel PBR normal maps.
+ * 3. Returns `{ storeConfig, resolvedTexturesById, summary }` ready for 3D showroom construction.
  */
 export async function ingestBrandWebsite(
   url: string,
@@ -127,8 +135,8 @@ export async function ingestBrandWebsite(
   onProgress?.({
     stage: 'analyzing_identity',
     stepNumber: 1,
-    label: '1. Analyzing Website Identity & Ethos...',
-    detail: `Parsing ${trimmedUrl} headlines, manifesto copy & CSS brand tokens`,
+    label: '1. Extracting Initial Website Photos & Visual Vibe...',
+    detail: `Analyzing ${trimmedUrl} hero imagery & palette via Gemini 4 Neon`,
   });
 
   let enteredStep2 = false;
@@ -137,10 +145,10 @@ export async function ingestBrandWebsite(
     onProgress?.({
       stage: 'designing_theme',
       stepNumber: 2,
-      label: '2. Designing Store Theme & Product Line...',
-      detail: 'Selecting 3D architectural archetype, WCAG palette & inventing 6 bespoke products',
+      label: '2. Matching Real Internet Products via Decision 1...',
+      detail: 'Searching live Shopify catalogs & calibrating top 6 studio packshots',
     });
-  }, 360);
+  }, 420);
 
   let apiPayload: IngestApiResponse;
   try {
@@ -171,10 +179,10 @@ export async function ingestBrandWebsite(
     onProgress?.({
       stage: 'designing_theme',
       stepNumber: 2,
-      label: '2. Designing Store Theme & Product Line...',
+      label: '2. Matching Real Internet Products via Decision 1...',
       detail: `${apiPayload.storeConfig.brandName} · ${archetypeLabel}`,
     });
-    await delay(95);
+    await delay(80);
   }
 
   const allRackItems: GarmentAssetSet[] = apiPayload.storeConfig.racks.flatMap((r) => r.items);
@@ -184,25 +192,26 @@ export async function ingestBrandWebsite(
   onProgress?.({
     stage: 'building_world',
     stepNumber: 3,
-    label: '3. Building 3D World & Merchandising Fixtures...',
-    detail: `Constructing ${archetypeLabel} & merchandising ${totalProductCount} bespoke 3D products`,
+    label: '3. Rendering 3D Cutout Garments & Store Fixtures...',
+    detail: `Running CIELAB studio cutouts & PBR normal maps for ${allRackItems.length} pulled garments`,
     completedGarments: 0,
-    totalGarments: totalProductCount,
+    totalGarments: Math.max(1, allRackItems.length),
   });
 
   const resolvedTexturesById: Record<string, IngestedGarmentTextures> = {};
   const enrichedItemById = new Map<string, GarmentAssetSet>();
 
-  // Only run browser CIELAB image cutouts when an item explicitly provides a verified customCutoutUrl
+  // Run `processGarmentInBrowser` in parallel across all real pulled internet apparel photos
   const itemsNeedingCutout = allRackItems.filter((item) =>
-    Boolean(item.productSpec?.customCutoutUrl || (!item.productSpec && item.rawUrl))
+    Boolean(item.rawUrl || item.productSpec?.customCutoutUrl || item.frontCutoutUrl)
   );
 
   if (itemsNeedingCutout.length > 0) {
     let completedCount = 0;
     await Promise.allSettled(
       itemsNeedingCutout.map(async (item) => {
-        const cutoutSource = item.productSpec?.customCutoutUrl || item.rawUrl;
+        const cutoutSource =
+          item.rawUrl || item.productSpec?.customCutoutUrl || item.frontCutoutUrl;
         if (!cutoutSource) return;
 
         const processed = await processGarmentInBrowser(cutoutSource, tolerance);
@@ -213,8 +222,8 @@ export async function ingestBrandWebsite(
         onProgress?.({
           stage: 'building_world',
           stepNumber: 3,
-          label: '3. Building 3D World & Merchandising Fixtures...',
-          detail: `Normalized ${completedCount}/${itemsNeedingCutout.length}: ${item.title}`,
+          label: '3. Rendering 3D Cutout Garments & Store Fixtures...',
+          detail: `CIELAB Cutout & Sobel PBR ${completedCount}/${itemsNeedingCutout.length}: ${item.title}`,
           completedGarments: completedCount,
           totalGarments: itemsNeedingCutout.length,
         });
@@ -246,8 +255,7 @@ export async function ingestBrandWebsite(
       })
     );
   } else {
-    // Brief visual beat so Step 3 renders crisply in HUD while parametric 3D geometries mount
-    await delay(90);
+    await delay(80);
   }
 
   const updatedRacks: RackPlacement[] = apiPayload.storeConfig.racks.map((rack, rackIdx) => ({
@@ -288,6 +296,16 @@ export async function ingestBrandWebsite(
   const inventedProductCount =
     inventedProducts.length || hangingApparelCount + pedestalObjectCount;
 
+  const matchedProductThumbUrls: string[] = [];
+  for (const prod of inventedProducts) {
+    const cutoutPreview = resolvedTexturesById[prod.id]?.previewDataUrl;
+    const thumb = cutoutPreview || prod.customCutoutUrl;
+    if (thumb && !matchedProductThumbUrls.includes(thumb)) {
+      matchedProductThumbUrls.push(thumb);
+    }
+    if (matchedProductThumbUrls.length >= 4) break;
+  }
+
   const elapsedMs = Math.round(performance.now() - startedAt);
 
   const summary: BrandIngestSummary = {
@@ -297,15 +315,19 @@ export async function ingestBrandWebsite(
     vibe: finalStoreConfig.vibe,
     brandEthos:
       finalStoreConfig.brandEthos ||
-      `${finalStoreConfig.brandName} reimagined as a ${archetypeLabel} with ${inventedProductCount} bespoke 3D products.`,
+      `${finalStoreConfig.brandName} reimagined as a ${archetypeLabel} with ${inventedProductCount} real internet products.`,
     archetype,
     inventedProductCount,
     hangingApparelCount,
     pedestalObjectCount,
     sourceType: apiPayload.sourceType,
     usedGemini: apiPayload.usedGemini,
+    usedDecision: Boolean(apiPayload.usedDecision),
+    initialPhotoUrls: apiPayload.initialPhotoUrls ?? [],
+    matchedProductThumbUrls,
+    matchedStoreDomains: apiPayload.matchedStoreDomains ?? [],
     rawProductCount: apiPayload.rawProductCount,
-    processedGarmentCount: inventedProductCount,
+    processedGarmentCount: Object.keys(resolvedTexturesById).length || inventedProductCount,
     heroGarmentId,
     heroTitle,
     elapsedMs,
