@@ -1,0 +1,115 @@
+{
+  "brand_slug": "kestrel-clay",
+  "host": {
+    "type": "person",
+    "name": "Maren Solis"
+  },
+  "positioning": "For tactile coffee drinkers and quiet collectors, Maren Solis is the small-batch ceramic and woodblock studio that pairs raw wood-ash stoneware with open process notes.",
+  "values": [
+    "Honest raw clay and visible kiln marks",
+    "Small-batch utility built for daily rituals",
+    "Open studio notes over gatekept craft"
+  ],
+  "audience_segments": [
+    {
+      "id": "seg_daily",
+      "who": "Home brewers and ritual-minded tea and coffee drinkers",
+      "wants": "Durable stoneware cups and drippers that feel grounded in the hand",
+      "entry_tier": "entry"
+    },
+    {
+      "id": "seg_collector",
+      "who": "Independent craft and print collectors",
+      "wants": "Numbered woodblock kiln studies and one-off sculptural vessels with firing stories",
+      "entry_tier": "core"
+    }
+  ],
+  "dynamic": {
+    "label": "maker→collector",
+    "evidence": [
+      "voice_1: shares kiln unloading temperatures and glaze failures openly",
+      "voice_2: signs every firing note by hand and invites collectors into glaze choices"
+    ]
+  },
+  "strategy": "Newcomers enter through affordable studio paper pieces or a single stoneware espresso cup, then deepen into daily pour-over tools and open throwing notes. Repeat fans graduate to numbered woodblock kiln prints, one-off basalt vessels, and custom table commissions.",
+  "voice": {
+    "traits": [
+      "grounded",
+      "unhurried",
+      "tactile",
+      "specific about clay and fire"
+    ],
+    "do": [
+      "Name the clay body, glaze mineral, or firing step",
+      "Speak in short, warm studio sentences",
+      "Invite visitors to notice weight, rim, and surface"
+    ],
+    "dont": [
+      "Use hype, countdowns, or luxury cliches",
+      "Invent awards, reviews, or unverified claims",
+      "Over-explain when two calm lines are enough"
+    ],
+    "samples": [
+      "Pulled from cone 10 reduction this morning—warm iron speckles along every rim.",
+      "This cup holds four ounces and keeps heat long after the crema settles.",
+      "Every print starts as ash rubbed from the kiln shelf onto Japanese kozo paper."
+    ]
+  },
+  "visual": {
+    "palette_hex": [
+      "#D9C9B8",
+      "#C46D4E",
+      "#2E2B28",
+      "#8A7968",
+      "#5B6B5C",
+      "#F2EAE0"
+    ],
+    "fonts": {
+      "display": "Fraunces",
+      "body": "Inter"
+    },
+    "materials": [
+      "speckled stoneware",
+      "raw linen",
+      "oiled oak",
+      "blackened basalt"
+    ],
+    "lighting_mood": "Warm north-window daylight softened by focused gallery pools",
+    "motifs": [
+      "kiln cone marks",
+      "wood-ash drips",
+      "hand-carved grid lines"
+    ]
+  },
+  "story_beats": [
+    {
+      "zone_id": "zone_kiln",
+      "beat": "From raw clay, wood ash, and firing logs to finished stoneware"
+    },
+    {
+      "zone_id": "zone_table",
+      "beat": "Daily coffee and table rituals shaped on the wheel"
+    },
+    {
+      "zone_id": "zone_gallery",
+      "beat": "Numbered woodblock kiln prints and one-off basalt vessels"
+    }
+  ],
+  "claims": [
+    {
+      "claim": "Stoneware pieces are wheel-thrown and fired to cone 10 reduction",
+      "source": "voice_1"
+    },
+    {
+      "claim": "Glaze tests incorporate sifted hardwood ash from studio firings",
+      "source": "img_02"
+    },
+    {
+      "claim": "Woodblock prints document the kiln shelf patterns after each firing",
+      "source": "img_05"
+    }
+  ],
+  "low_confidence": [
+    "visual.fonts.display"
+  ]
+}
