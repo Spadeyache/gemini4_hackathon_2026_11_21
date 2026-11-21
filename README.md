@@ -1,140 +1,103 @@
-# gemini4_hackathon_2026_11_21
+# ATELIER 119 — URL → Real Internet Products → 3D Brand World & Commercial Studio Engine
 
-## ATELIER 119 — Multimodal URL/Image-to-3D Boutique & Synthetic Shopper Engine
+> **Gemini 4 NYC Hackathon (Nov 21, 2026)**  
+> **Primary Track:** Problem Statement Two — **Element 119** *(Multimodal Vision, Spatial World Synthesis & Generated Commercial Media + Decisions API)*  
+> **Bonus Track:** **Build with Commerce (`Shopify` / `shop.dev`)** *(Live Multi-Store Catalog Discovery, AI Storefront Concierge & GraphQL Sync)*
 
-> **Gemini 4 NYC Hackathon (Nov 21, 2026) · Hard Cutoff: 5:00 PM ET**  
-> **Primary Track:** Problem Statement Two — **Element 119** *(Synthesizing an Emergent Spatial Medium)*  
-> **Bonus Track:** **Build with Commerce (`Shopify` / `shop.dev`)** *(Bidirectional Storefront & Admin GraphQL Loop)*
-
-**ATELIER 119** transforms a single garment photo, brand URL, Instagram grid screenshot, or live **Shopify** catalog into a walkable, magazine-grade **3D architectural flagship boutique**—and then populates the floor with an autonomous **Synthetic Shopper Swarm** powered by **Gemini 4** + the **Gemini Decisions API** (`gemini-decision-1`) to mutate lighting, aisle layout, hero faceouts, and pricing in real time until held-out conversion peaks.
-
-Instead of flat 2D e-commerce grids or slow, melted 3D NeRF meshes that blur screen-printed typography, **ATELIER 119** pairs **Stage A Multimodal Garment Hang Normalization** (`gemini-4-hydrogen`) with **Stage B 60 FPS Parametric Volumetric Cloth Shells**, **Roblox-style `WASD` player walk mode**, and live **closed-loop spatial merchandising** synced straight back to Shopify (`shop.dev`).
+**ATELIER 119** turns **any website URL** (e.g., `a24films.com`, `linear.app`, `bluebottlecoffee.com`, `rowingblazers.com`, `kotn.com`) into a curated, walkable **3D flagship boutique** stocked with **real matching products pulled from live e-commerce catalogs across the internet**—complete with live **`gemini-nano-banana-2.1` commercial 3D studio renders for sale**, **formal sculptural silhouette judges** powered by **`gemini-decision-1`**, and a **Shopify AI Concierge**.
 
 ---
 
-## ⚡ 30-Second Teammate Quickstart
+## 🖼️ Live Showroom & Studio Render Captures
 
-All pre-baked PBR showroom textures (`travertine`, `limewash`, `sage-fluted-wood`) and normalized volumetric garment layers in `public/assets/**` are tracked directly in Git—cloning boots a 60 FPS 3D flagship out of the box even before adding API keys!
+| Commercial 3D Studio Render (`gemini-nano-banana-2.1`) | Warm Timber & Clay Atelier (`PhotorealObjectStand3D`) |
+| :---: | :---: |
+| ![Commercial 3D Studio Render Modal](docs/screenshots/studio-render-modal.png) | ![Warm Artisanal Atelier Real Objects](docs/screenshots/atelier-real-objects.png) |
+| **Minimalist Tech Pavilion + Silhouette Judges** | **Avant-Garde Concrete Loft + Real Packshots** |
+| ![Minimalist Tech Pavilion](docs/screenshots/linear-tech-pavilion.png) | ![Avant-Garde Concrete Loft](docs/screenshots/concrete-loft-products.png) |
+
+---
+
+## ⚡ 30-Second Quickstart
 
 ```bash
 git clone https://github.com/Spadeyache/gemini4_hackathon_2026_11_21.git
 cd gemini4_hackathon_2026_11_21
 npm install
 cp .env.example .env   # PowerShell: Copy-Item .env.example .env
+# Add your GEMINI_API_KEY (and optional GEMINI_API_KEY_2 backup key) to .env
 npm run dev
 ```
 
-1. Open **`http://localhost:5173`** — the interactive 3D showroom fills **≥85% of the viewport**.
-2. Fill in `.env` with your team's `GEMINI_API_KEY` and `SHOPIFY_*` credentials (see [`.env.example`](.env.example)).
-3. Verify production TypeScript + Vite build before opening any PR:
-   ```bash
-   npm run build
-   ```
-4. *(Team Lead one-liner)* Publish all 8 sprint issues + labels to GitHub:
-   ```powershell
-   .\scripts\create_github_issues.ps1
-   ```
+1. Open the local Vite URL (`http://localhost:5173` or next available port).
+2. **Paste any website URL** in the top bar and click **`Generate 3D Brand Shop`**.
+3. **Click any hanging garment or pedestal object** (or **`3D Studio Render`** in the bottom dock) to generate a live **`gemini-nano-banana-2.1`** commercial 3D studio campaign render for sale, normalize cutouts back into the 3D showroom, or open the real Shopify product listing.
+4. Click **`Walk Gallery`** (`WASD` + mouse look) to walk through the 3D showroom or **`Convene Judges`** to watch the 4 formal silhouette critics evaluate the collection via **`gemini-decision-1`**.
 
 ---
 
-## 🏗️ Multi-Model Gemini 4 + Decisions API + Shopify Architecture
+## 🧠 Multi-Model Gemini 4 + Decisions API + Shopify Pipeline
 
 ```mermaid
-flowchart TD
-    Ingest["Raw Brand Input: Store URL, IG Grid Screenshot, Lifestyle Photo, or Shopify SKU"]
-
-    subgraph Multimodal_Ingest["1. Multimodal Brand & Garment Synthesis"]
-        Carbon["Gemini 4 Architect (GEMINI_ARCHITECT_MODEL = gemini-4-carbon) -> Typed StoreConfig JSON, Palette, Racks & Lighting"]
-        Hydrogen["Gemini 4 Image Normalizer (GEMINI_IMAGE_MODEL = gemini-4-hydrogen) -> De-wrinkled Hanger Cutout, 360 Back & Sobel Normal Map"]
-    end
-
-    subgraph Spatial_Engine["2. 85%+ Viewport 3D Boutique & Roblox Walk Mode (60 FPS R3F)"]
-        Showroom["BoutiqueWorld + Volumetric HangingGarment + Roblox WASD Player Mode"]
-        Swarm3D["ShopperSwarmLayer: Autonomous 3D NPC Persona Avatars + Live Thought Bubbles"]
-    end
-
-    subgraph Closed_Loop["3. Parallel Shopper Swarm & Gemini Decisions API"]
-        Neon["Gemini 4 Swarm (GEMINI_SWARM_MODEL = gemini-4-neon) -> 5 Persona Archetypes Inspecting Live Store & Pricing"]
-        Decisions["Gemini Decisions API (GEMINI_DECISIONS_MODEL = gemini-decision-1) -> Gate buy / skip / bounce + Select Optimal Store Mutation"]
-        Mutator["Live StoreConfig Mutator: swap_hero_sku | adjust_lighting | declutter_aisle | reprice (Brand DNA Floor >= 0.80)"]
-    end
-
-    subgraph Eval_And_Commerce["4. Empirical Proof & Bidirectional Commerce"]
-        HeldOut["Held-Out Persona Eval Harness (Cohort A Train vs. Cohort B Test: Round 0 -> Round 3 Lift)"]
-        Shopify["Shopify shop.dev GraphQL Sync (Storefront Catalog Ingest <-> Admin Winning Collection & Metafield Push)"]
-    end
-
-    Ingest --> Carbon
-    Ingest --> Hydrogen
-    Carbon --> Showroom
-    Hydrogen --> Showroom
-    Showroom --> Swarm3D
-    Swarm3D --> Neon
-    Neon --> Decisions
-    Decisions --> Mutator
-    Mutator -->|"Real-time 3D morph"| Showroom
-    Decisions --> HeldOut
-    Mutator <--> Shopify
-    Shopify --> Ingest
+flowchart LR
+    URL["1. Any Website URL"] --> Neon["2. Gemini 4 Neon (Multimodal Vision): Analyze Initial Website Photos, Palette & Brand Ethos"]
+    Neon --> ShopifySearch["3. Live Multi-Store Shopify Discovery: Scan 20+ Public Catalogs for Off-Body Studio Packshots"]
+    ShopifySearch --> Decision["4. Gemini Decision 1 (v1beta): Single-Pass Calibrated Brand-Fit Ranking (~230ms, 0 Output Tokens)"]
+    Decision --> World["5. 60 FPS 3D Flagship World: 4 Architectural Archetypes + CIELAB Cutout Racks & Riser Plinths"]
+    World --> Banana["6. Gemini Nano Banana 2.1: Commercial 3D Studio Product Render Showcase For Sale"]
+    World --> Concierge["7. Gemini 4 Hydrogen + shop.dev: AI Storefront Concierge, Checkout Links & Admin GraphQL Sync"]
 ```
 
-### Environment & Model Roster (`.env.example`)
+### Models & Roles (`@google/genai@^3.6.1`)
 
-| Variable | Default / Target | Role in ATELIER 119 |
+| Model | API Surface | Exact Role in ATELIER 119 |
 | :--- | :--- | :--- |
-| `GEMINI_API_KEY` | *(required for live API)* | Shared Gemini 4 + Decisions API authentication key |
-| `GEMINI_ARCHITECT_MODEL` | `gemini-4-carbon` | Deep multimodal Brand & Store Architect (`URL` / IG grid / photo -> `StoreConfig` JSON + Brand DNA guardrails) |
-| `GEMINI_SWARM_MODEL` | `gemini-4-neon` | High-throughput parallel Synthetic Shopper Swarm evaluating racks, lighting & price tiers |
-| `GEMINI_IMAGE_MODEL` | `gemini-4-hydrogen` | Messy lifestyle / human-model / IG garment photo normalization into clean studio hanger RGBA cutouts |
-| `GEMINI_DECISIONS_MODEL` | `gemini-decision-1` | **Gemini Decisions API** structured `buy` / `skip` / `bounce` routing & reward-maximizing store mutation gate |
-| `SHOPIFY_STORE_DOMAIN` | `*.myshopify.com` | Target Shopify store domain for `shop.dev` GraphQL sync |
-| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | *(Shopify token)* | Storefront GraphQL API product, variant, pricing & image catalog ingestion |
-| `SHOPIFY_ADMIN_ACCESS_TOKEN` | *(Shopify token)* | Admin GraphQL API write-back for winning collection sort order, hero metafields & copy |
+| **`gemini-4-neon`** | `ai.interactions.create` (`v1`) | Multimodal vision analysis of extracted initial website photos (`og:image`, hero photography) + CSS/SVG palette to choose the 3D architectural world archetype and targeted visual product search queries (`server/brandIngestPlugin.ts`). |
+| **`gemini-decision-1`** | `ai.decisions.create` (`v1beta`) | Calibrated single-pass `noul` (yes/no probability) & `choice` scoring (~`230ms`, zero output tokens) to rank real internet product candidates for brand fit AND drive the 4 formal silhouette product judges (`server/brandIngestPlugin.ts`, `server/gemini4DecisionsPlugin.ts`). |
+| **`gemini-nano-banana-2.1`** | `ai.interactions.create` (`v1`) | Generates bespoke commercial 3D studio product renders on architectural stone/concrete/titanium pedestals for sale, plus normalized 3D showroom cutouts (`server/studioRenderPlugin.ts`, `src/components/products/StudioProductModal.tsx`). |
+| **`gemini-4-hydrogen`** | `ai.interactions.create` (`v1`) | Powers real-time judge commentary and the **Shopify AI Merchandising Concierge** (`POST /api/shopify/chat`), grounding recommendations in real pricing, materials, comparable blanks, and `shop.dev` checkout/publish payloads (`server/shopifyCommercePlugin.ts`). |
 
 ---
 
-## 🤝 Zero-Merge-Conflict 3-Person Team Ownership Table
+## 🏛️ Key Engineering Highlights
 
-To ship cleanly before the **4:15 PM ET feature freeze** (**5:00 PM ET hard cutoff**), the repository is partitioned so **all 3 teammates can code, commit, and merge simultaneously without ever touching the same files**.
-
-### Git Branch & PR Rules
-- **Branch format:** `feat/issue-<num>-<slug>` *(e.g. `feat/issue-1-brand-architect`, `feat/issue-5-shopify-sync`, `feat/issue-8-roblox-checkout`)*
-- **Shared Contract (Read-Only Lock):** [`src/types/storeConfig.ts`](src/types/storeConfig.ts) is the shared TypeScript boundary. Do not modify existing field names without a 10-second Slack/Discord heads-up; add optional fields (`field?: Type`) if extending.
-- **UI Guardrail:** Keep the interactive 3D canvas occupying **≥85% of the viewport** at all times—new controls belong inside compact floating glassmorphic drawers/HUD pills, never full-screen SaaS tables.
-
-| Teammate | Role & Focus | Exclusive Owned Paths (Zero Overlap) | Assigned Issues ([`TEAM_ISSUES.md`](TEAM_ISSUES.md)) | Example Feature Branches |
-| :--- | :--- | :--- | :--- | :--- |
-| **Teammate 1** | **3D World, Roblox Walkthrough & Live Garment Ingestion** | `src/components/BoutiqueWorld.tsx`<br>`src/components/BoutiqueRack.tsx`<br>`src/components/HangingGarment.tsx`<br>`src/components/CameraRig.tsx`<br>`src/components/Roblox*`<br>`src/components/CheckoutCartDrawer.tsx`<br>`src/lib/garmentProcessor.ts`<br>`scripts/process_garment.py`<br>`scripts/normalize_drape_and_companions.py` | **Issue #4** *(Gemini Image Lifestyle/Model Photo Normalization)*<br>**Issue #8** *(Roblox Walk Mode Checkout Cart, NPC Chat & 1-Min Video HUD)* | `feat/issue-4-lifestyle-garment-norm`<br>`feat/issue-8-roblox-checkout-hud` |
-| **Teammate 2** | **Gemini 4 Multi-Model Agents & Decisions API Store Mutation** | `server/index.ts`<br>`server/agents/*`<br>`server/routes/*`<br>`src/components/ShopperSwarmLayer.tsx`<br>`src/services/boutiquePipeline.ts`<br>`src/services/storeOptimizer.ts` | **Issue #1** *(Multimodal Brand Architect `POST /api/ingest-url` + IG Grid Drop)*<br>**Issue #2** *(Synthetic Shopper Swarm + Gemini Decisions API `buy`/`skip`/`bounce`)*<br>**Issue #3** *(Closed-Loop Live `StoreConfig` Mutator)* | `feat/issue-1-brand-architect`<br>`feat/issue-2-shopper-decisions`<br>`feat/issue-3-closed-loop-mutator` |
-| **Teammate 3** | **Proof-It-Works Eval Harness, Breaking-Point Stress Test & Shopify `shop.dev` Sync** | `server/shopify/*`<br>`src/services/shopifySync.ts`<br>`src/components/ShopifySyncModal.tsx`<br>`src/components/EvalProofBadge.tsx`<br>`scripts/eval_heldout_personas.*`<br>`scripts/stress_test_element119.*`<br>`docs/PROOF_IT_WORKS.md` | **Issue #5** *(`shop.dev` Storefront Ingest + Admin Winning Collection Sync)*<br>**Issue #6** *(Held-Out Persona Eval Harness: Round 0 vs. Round 3 Lift)*<br>**Issue #7** *(Element 119 Breaking-Point Stress Test + Consensus Damping)* | `feat/issue-5-shopify-sync`<br>`feat/issue-6-heldout-eval-proof`<br>`feat/issue-7-element119-stress-test` |
-
-> **What about `src/App.tsx`?** Keep `src/App.tsx` wiring minimal—each teammate builds self-contained components/services in their owned files first and merges thin `<Component />` mounts via quick 5-line PRs.
+- **4 Dynamic 3D Architectural Archetypes (`src/components/BoutiqueWorld.tsx`):**
+  - `minimalist_tech_pavilion` *(anodized obsidian slat walls, indigo LED channels, coffered daylight ceiling)*
+  - `avant_garde_concrete_loft` *(board-formed poured concrete monoliths, safety-orange architectural neon, brushed chrome rails)*
+  - `warm_artisanal_atelier` *(rammed-earth clay plaster, vertical white-oak louver screen, blackened bronze hardware)*
+  - `heritage_arch_flagship` *(recessed fluted sage arch alcove, Venetian limewash, honed Roman travertine)*
+- **Photorealistic Real-Product Cutout Pipeline (`src/lib/garmentProcessor.ts`, `src/components/products/PhotorealObjectStand3D.tsx`, `src/components/HangingGarment.tsx`):**
+  - Perceptual CIELAB flood-fill background removal, studio drop-shadow & enclosed armpit-slit stripping, un-mirrored 360° back synthesis, Sobel PBR surface normal maps, dual-sided volumetric cloth shells on 3D hangers, and 8-layer volumetric relief object stands on 2.2cm brushed-metal & stone risers.
+- **Hot-Reloaded Multi-Key Failover Pool (`server/geminiKeyPool.ts`):**
+  - Round-robins and automatically fails over across `GEMINI_API_KEY`, `GEMINI_API_KEY_2`, `GEMINI_API_KEY_3`, and `GEMINI_API_KEYS` without restarting Vite.
+- **Shopify Commerce Integration (`server/shopifyCommercePlugin.ts`, `src/features/shopify/ShopifyConciergeDrawer.tsx`):**
+  - Pulls real buyable products from public Shopify catalogs, generates live Shopify cart permalinks / Storefront GraphQL `cartCreate` checkouts, and exports `shop.dev` Admin GraphQL `productCreate` & `collectionCreate` manifests.
 
 ---
 
-## 🏆 Judging Rubric Alignment
+## 📁 Project Structure
 
-| Judging Criterion | Weight | How ATELIER 119 Scores Maximum Points |
-| :--- | :---: | :--- |
-| **Live Demo** | **35%** | Instant `t = 0s` 60 FPS 3D architectural flagship (**≥85% viewport**), drag-and-drop messy garment/IG screenshot -> live room & rack metamorphosis, `WASD` Roblox walk-around + NPC shopper chat, and zero-latency local fallbacks so stage Wi-Fi can never break the demo. |
-| **Proof It Works** | **25%** | Disjoint **Critique Cohort A** vs. **Held-Out Evaluation Cohort B** benchmark (`Round 0` uncurated baseline -> `Round 3` optimized store) measuring statistically grounded `buy` conversion lift, `bounce` reduction, Brand DNA coherence (`≥ 0.80`), plus a documented **40-SKU / 50-agent oscillation breaking-point stress test** & consensus damping fix (Issues **#6** & **#7**). |
-| **Creativity (Element 119)** | **20%** | Invents an emergent **self-merchandising spatial medium**: garments aren't static JPEGs or melted NeRFs—they hang as crisp dual-sided volumetric cloth shells inside a boutique whose architecture, lighting, and capsule rails evolve autonomously from synthetic human behavior. |
-| **Gemini 4 & Decisions API** | **20%** | Orchestrates **3 distinct Gemini 4 models** (`gemini-4-carbon` Architect, `gemini-4-neon` Parallel Shopper Swarm, `gemini-4-hydrogen` Lifestyle Garment Normalizer) tightly coupled with **`gemini-decision-1` (Gemini Decisions API)** for structured `buy`/`skip`/`bounce` gating and closed-loop action selection (`swap_hero_sku`, `adjust_lighting`, `declutter_aisle`, `reprice`). |
-| **Shopify Bonus Track (`shop.dev`)** | **Bonus** | Full bidirectional commerce loop: hydrates live `GarmentAssetSet` racks from **Shopify Storefront GraphQL**, runs spatial shopper optimization, and pushes the winning hero order, price anchors, and curatorial metafields back via **Shopify Admin GraphQL** (Issue **#5**). |
-
----
-
-## 📋 Sprint Backlog & Issue Automation
-
-- Full specs, acceptance criteria, and file boundaries for **Issues #1–#8** live in [**`TEAM_ISSUES.md`**](TEAM_ISSUES.md).
-- Architectural guardrails and Stage A/B volumetric garment specs live in [**`CONTEXT.md`**](CONTEXT.md).
-- To create all labels and all 8 GitHub Issues on `Spadeyache/gemini4_hackathon_2026_11_21`:
-  ```powershell
-  .\scripts\create_github_issues.ps1
-  ```
-
-### ⏱️ Hackathon Day Run-of-Show (ET)
-- **Now – 3:30 PM ET:** Parallel build on `feat/issue-1..8-*` branches inside owned folders.
-- **3:30 PM – 4:15 PM ET:** Integration merge, end-to-end Round 0 -> Round 3 eval capture, Shopify live sync check.
-- **4:15 PM ET (HARD FEATURE FREEZE):** Record 1-minute demo video (`t = 0s` inside 3D boutique, Issue #8 cinema toggle), audit `.env` vs `.env.example`, rehearse 3-min live pitch + 2-min Q&A.
-- **5:00 PM ET:** Final submission locked.
+```text
+├── server/
+│   ├── brandIngestPlugin.ts       # URL -> initial photo extraction -> gemini-4-neon -> live Shopify matcher -> gemini-decision-1
+│   ├── studioRenderPlugin.ts      # Live gemini-nano-banana-2.1 commercial 3D studio render & cutout cache endpoint
+│   ├── gemini4DecisionsPlugin.ts  # Single-pass gemini-decision-1 calibrated persona & store mutation endpoint
+│   ├── shopifyCommercePlugin.ts   # Shopify Storefront/Admin GraphQL + gemini-4-hydrogen AI concierge
+│   └── geminiKeyPool.ts           # Hot-reloaded multi-key round-robin & HTTP 429 failover pool
+├── src/
+│   ├── components/
+│   │   ├── BoutiqueWorld.tsx      # 4 distinct procedural PBR 3D architectural showroom worlds
+│   │   ├── BoutiqueRack.tsx       # Brushed metal hero faceout & capsule rails
+│   │   ├── HangingGarment.tsx     # Volumetric dual-sided hanging garment cloth shell + 3D hanger
+│   │   └── products/
+│   │       ├── PhotorealObjectStand3D.tsx # Multi-slice volumetric relief display stand for real object cutouts
+│   │       └── StudioProductModal.tsx     # Interactive 3D parallax "For Sale" modal (gemini-nano-banana-2.1)
+│   ├── features/
+│   │   ├── ingestion/UrlIngestBar.tsx         # Floating URL intake bar + live pipeline telemetry
+│   │   ├── shoppers/ShopperSwarmLayer.tsx     # 4 formal frosted-monolith sculptural silhouette judges
+│   │   ├── player/RobloxPlayerController.tsx  # Smooth first-person WASD gallery walkthrough
+│   │   └── shopify/ShopifyConciergeDrawer.tsx # Shopify AI concierge chat, bag & GraphQL publisher
+│   ├── data/presets.ts            # 4 instant-load flagship worlds with verified real studio packshots
+│   └── lib/garmentProcessor.ts    # Browser CIELAB cutout, shadow stripper & Sobel PBR normal map engine
+└── docs/screenshots/              # Captured WebGL showroom & Gemini Nano Banana 2.1 studio renders
+```
