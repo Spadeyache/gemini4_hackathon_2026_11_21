@@ -5,21 +5,22 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
+  Compass,
   Eye,
-  Gamepad2,
   Layers,
-  Sparkles,
+  Scale,
   Sliders,
+  Sparkles,
   Upload,
-  Users,
   Wand2,
 } from 'lucide-react';
-import { BoutiqueWorld } from './components/BoutiqueWorld';
+import { BoutiqueWorld, DISPLAY_FIXTURE_ANCHORS } from './components/BoutiqueWorld';
 import {
   BoutiqueRack,
   type GarmentResolvedTextures,
   type RackGarmentItem,
 } from './components/BoutiqueRack';
+import { PedestalProduct3D } from './components/products/Product3DFactory';
 import { CAMERA_PRESETS, CameraRig, type CameraPresetId } from './components/CameraRig';
 import { DEFAULT_PRESET_ID, DEFAULT_TUNING_PARAMS, STORE_PRESETS } from './data/presets';
 import { UrlIngestBar } from './features/ingestion/UrlIngestBar';
@@ -32,6 +33,7 @@ import {
   RobloxPlayerController,
   type PlayerPovMode,
 } from './features/player/RobloxPlayerController';
+import { ShopifyConciergeDrawer } from './features/shopify/ShopifyConciergeDrawer';
 import {
   ShopperSwarmLayer,
   type ShopperConversionStats,
@@ -43,10 +45,18 @@ import type {
   GarmentRenderMode,
   GarmentSourceMode,
   GarmentTuningParams,
+  InventedProductSpec,
   StoreConfig,
 } from './types/storeConfig';
 
 type RackLayoutMode = 'split_racks' | 'hero_trio' | 'solo';
+
+const ARCHETYPE_BADGES: Record<string, string> = {
+  heritage_arch_flagship: 'Heritage Arch Flagship',
+  minimalist_tech_pavilion: 'Minimalist Tech Pavilion',
+  warm_artisanal_atelier: 'Warm Timber & Clay Atelier',
+  avant_garde_concrete_loft: 'Avant-Garde Concrete Loft',
+};
 
 function getInitialQueryParams() {
   if (typeof window === 'undefined') {
@@ -84,7 +94,7 @@ function getInitialQueryParams() {
         : ('split_racks' as RackLayoutMode),
     sway: swayParam !== null ? Number(swayParam) : undefined,
     walk: params.get('walk') === '1',
-    swarm: params.get('swarm') === '1',
+    swarm: params.get('swarm') === '1' || params.get('judges') === '1',
     hideHud: params.get('hud') === '0',
     instantCam: params.has('cam'),
   };
@@ -137,8 +147,8 @@ export default function App() {
   const [cameraPreset, setCameraPreset] = useState<CameraPresetId>(init.cam);
   const [instantCamera, setInstantCamera] = useState<boolean>(init.instantCam);
   const [walkMode, setWalkMode] = useState<boolean>(init.walk);
-  const [povMode, setPovMode] = useState<PlayerPovMode>('third_person');
-  const [swarmEnabled, setSwarmEnabled] = useState<boolean>(init.swarm);
+  const [povMode, setPovMode] = useState<PlayerPovMode>('first_person');
+  const [judgesEnabled, setJudgesEnabled] = useState<boolean>(init.swarm);
   const [conversionStats, setConversionStats] = useState<ShopperConversionStats | null>(null);
 
   const [layoutMode, setLayoutMode] = useState<RackLayoutMode>(init.layout);
@@ -156,19 +166,17 @@ export default function App() {
     showCapsuleCompanions: init.layout !== 'solo',
   }));
 
-  const [hudCollapsed, setHudCollapsed] = useState<boolean>(false);
+  const [hudCollapsed, setHudCollapsed] = useState<boolean>(true);
   const [showSliders, setShowSliders] = useState<boolean>(false);
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const [isProcessingUpload, setIsProcessingUpload] = useState<boolean>(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedSourceBlob, setUploadedSourceBlob] = useState<File | string | null>(null);
 
-  // Pre-baked asset textures keyed by garment ID & source mode
   const [bakedTextures, setBakedTextures] = useState<
     Record<string, { normalized?: GarmentResolvedTextures; raw?: GarmentResolvedTextures }>
   >({});
 
-  // Live browser-processed textures (for raw_cutout tolerance tuning or custom drag-and-drop image)
   const [liveHeroProcessed, setLiveHeroProcessed] =
     useState<ProcessedGarmentTextures | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -186,14 +194,18 @@ export default function App() {
     };
   }, [ingestedStore, presetId, customPaletteOverride]);
 
-  // Load pre-baked cutout & normal textures for preset items (skip items already in ingestedTexturesById)
+  // Load pre-baked cutout & normal textures ONLY for items that don't use parametric 3D `productSpec`
   useEffect(() => {
     if (ingestedStore) return;
     let cancelled = false;
-    const allItems: GarmentAssetSet[] = activeConfig.racks.flatMap((r) => r.items);
+    const cutoutItems: GarmentAssetSet[] = activeConfig.racks
+      .flatMap((r) => r.items)
+      .filter((item) => !item.productSpec || Boolean(item.productSpec.customCutoutUrl));
+
+    if (cutoutItems.length === 0) return;
 
     Promise.all(
-      allItems.map(async (item) => {
+      cutoutItems.map(async (item) => {
         const [normFront, normBack, normNormal, rawFront, rawBack, rawNormal] =
           await Promise.all([
             loadThreeTexture(item.normalizedFrontCutoutUrl || item.frontCutoutUrl, false),
@@ -245,7 +257,7 @@ export default function App() {
           };
         }
       }
-      setBakedTextures(nextMap);
+      setBakedTextures((prev) => ({ ...prev, ...nextMap }));
     });
 
     return () => {
@@ -253,12 +265,14 @@ export default function App() {
     };
   }, [activeConfig.racks, ingestedStore]);
 
-  // Run live browser cutout processor when user uploads a custom file OR switches to live raw cutout tuning
+  // Live browser cutout processor for custom uploaded clothing photo
   useEffect(() => {
     const sourceToProcess =
       tuning.sourceMode === 'custom_upload' && uploadedSourceBlob
         ? uploadedSourceBlob
-        : !ingestedStore && tuning.sourceMode === 'raw_cutout'
+        : !ingestedStore &&
+            presetId === 'good-shot-club' &&
+            tuning.sourceMode === 'raw_cutout'
           ? '/assets/raw-shirt.jpg'
           : null;
 
@@ -291,7 +305,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [tuning.sourceMode, tuning.cutoutTolerance, uploadedSourceBlob, ingestedStore]);
+  }, [tuning.sourceMode, tuning.cutoutTolerance, uploadedSourceBlob, ingestedStore, presetId]);
 
   const handleIngestComplete = useCallback((result: BrandWebsiteIngestResult) => {
     setIngestedTexturesById((prev) => {
@@ -357,10 +371,17 @@ export default function App() {
     };
   }, [handleUploadedFile]);
 
-  const resolveItemTextures = useCallback(
-    (item: GarmentAssetSet, isHeroItem: boolean): GarmentResolvedTextures | undefined => {
+  const toRackGarmentItem = useCallback(
+    (item: GarmentAssetSet, isHeroItem: boolean): RackGarmentItem | null => {
+      // 1. Custom uploaded garment photo overrides hero stand
       if (isHeroItem && tuning.sourceMode === 'custom_upload' && liveHeroProcessed) {
         return {
+          id: item.id,
+          sku: item.sku,
+          title: uploadedFileName ? uploadedFileName.replace(/\.[^.]+$/, '') : item.title,
+          subtitle: item.subtitle,
+          price: item.price,
+          featured: true,
           frontMap: liveHeroProcessed.frontTexture,
           backMap: liveHeroProcessed.backTexture,
           normalMap: liveHeroProcessed.normalTexture,
@@ -368,19 +389,43 @@ export default function App() {
         };
       }
 
-      // Live URL-ingested brand garments
-      const ingested = ingestedTexturesById[item.id];
-      if (ingested) {
+      // 2. Parametric 3D apparel invented from website theme (`HeavyweightHoodie3D`, `VarsityJacket3D`, `TailoredTee3D`)
+      if (item.productSpec && !item.productSpec.customCutoutUrl) {
+        const ingestedCutout = ingestedTexturesById[item.id];
+        if (ingestedCutout) {
+          return {
+            id: item.id,
+            sku: item.sku,
+            title: item.title,
+            subtitle: item.subtitle,
+            price: item.price,
+            featured: isHeroItem,
+            frontMap: ingestedCutout.frontMap,
+            backMap: ingestedCutout.backMap,
+            normalMap: ingestedCutout.normalMap,
+            aspect: ingestedCutout.aspect,
+          };
+        }
         return {
-          frontMap: ingested.frontMap,
-          backMap: ingested.backMap,
-          normalMap: ingested.normalMap,
-          aspect: ingested.aspect,
+          id: item.id,
+          sku: item.sku,
+          title: item.title,
+          subtitle: item.subtitle,
+          price: item.price,
+          featured: isHeroItem,
+          productSpec: item.productSpec,
         };
       }
 
+      // 3. Explicit studio garment cutout (e.g. Good Shot Club ringer tee)
       if (isHeroItem && tuning.sourceMode === 'raw_cutout' && liveHeroProcessed) {
         return {
+          id: item.id,
+          sku: item.sku,
+          title: item.title,
+          subtitle: item.subtitle,
+          price: item.price,
+          featured: true,
           frontMap: liveHeroProcessed.frontTexture,
           backMap: liveHeroProcessed.backTexture,
           normalMap: liveHeroProcessed.normalTexture,
@@ -389,12 +434,36 @@ export default function App() {
       }
 
       const entry = bakedTextures[item.id];
-      if (isHeroItem && tuning.sourceMode === 'raw_cutout' && entry?.raw) {
-        return entry.raw;
+      const tex =
+        isHeroItem && tuning.sourceMode === 'raw_cutout' && entry?.raw
+          ? entry.raw
+          : (entry?.normalized ?? entry?.raw);
+
+      if (!tex) {
+        return item.productSpec
+          ? {
+              id: item.id,
+              sku: item.sku,
+              title: item.title,
+              subtitle: item.subtitle,
+              price: item.price,
+              featured: isHeroItem,
+              productSpec: item.productSpec,
+            }
+          : null;
       }
-      return entry?.normalized ?? entry?.raw;
+
+      return {
+        id: item.id,
+        sku: item.sku,
+        title: item.title,
+        subtitle: item.subtitle,
+        price: item.price,
+        featured: isHeroItem,
+        ...tex,
+      };
     },
-    [bakedTextures, ingestedTexturesById, liveHeroProcessed, tuning.sourceMode]
+    [bakedTextures, ingestedTexturesById, liveHeroProcessed, tuning.sourceMode, uploadedFileName]
   );
 
   // Build resolved RackGarmentItems for hero rack & secondary rack
@@ -403,54 +472,14 @@ export default function App() {
     const secondRack = activeConfig.racks[1];
 
     const heroItemSpec = heroRack?.items[0];
-    const heroTex = heroItemSpec ? resolveItemTextures(heroItemSpec, true) : undefined;
-
-    const heroItem: RackGarmentItem | null =
-      heroItemSpec && heroTex
-        ? {
-            id: heroItemSpec.id,
-            sku: heroItemSpec.sku,
-            title:
-              tuning.sourceMode === 'custom_upload' && uploadedFileName
-                ? uploadedFileName.replace(/\.[^.]+$/, '')
-                : heroItemSpec.title,
-            subtitle: heroItemSpec.subtitle,
-            price: heroItemSpec.price,
-            featured: true,
-            ...heroTex,
-          }
-        : null;
+    const heroItem = heroItemSpec ? toRackGarmentItem(heroItemSpec, true) : null;
 
     const extraHeroItems: RackGarmentItem[] = (heroRack?.items.slice(1) ?? [])
-      .map((c) => {
-        const tex = resolveItemTextures(c, false);
-        if (!tex) return null;
-        return {
-          id: c.id,
-          sku: c.sku,
-          title: c.title,
-          subtitle: c.subtitle,
-          price: c.price,
-          featured: false,
-          ...tex,
-        } as RackGarmentItem;
-      })
+      .map((c) => toRackGarmentItem(c, false))
       .filter((x): x is RackGarmentItem => x !== null);
 
     const secondItems: RackGarmentItem[] = (secondRack?.items ?? [])
-      .map((c) => {
-        const tex = resolveItemTextures(c, false);
-        if (!tex) return null;
-        return {
-          id: c.id,
-          sku: c.sku,
-          title: c.title,
-          subtitle: c.subtitle,
-          price: c.price,
-          featured: false,
-          ...tex,
-        } as RackGarmentItem;
-      })
+      .map((c) => toRackGarmentItem(c, false))
       .filter((x): x is RackGarmentItem => x !== null);
 
     const allCompanions = [...extraHeroItems, ...secondItems];
@@ -469,18 +498,26 @@ export default function App() {
         secondaryRackItems: [] as RackGarmentItem[],
       };
     }
-    // split_racks: Hero rack items on rack[0] + secondary rack items on rack[1]
     return {
       heroRackItems: heroItem ? [heroItem, ...extraHeroItems] : extraHeroItems,
       secondaryRackItems: secondItems,
     };
-  }, [
-    activeConfig.racks,
-    layoutMode,
-    resolveItemTextures,
-    tuning.sourceMode,
-    uploadedFileName,
-  ]);
+  }, [activeConfig.racks, layoutMode, toRackGarmentItem]);
+
+  // 3D Physical Hard-Goods & Accessories Placed on Table & Pedestals
+  const pedestalProducts = useMemo(() => {
+    const prods = activeConfig.products ?? [];
+    return prods.filter(
+      (
+        p
+      ): p is InventedProductSpec & {
+        placement: 'center_table' | 'left_pedestal' | 'right_pedestal';
+      } =>
+        p.placement === 'center_table' ||
+        p.placement === 'left_pedestal' ||
+        p.placement === 'right_pedestal'
+    );
+  }, [activeConfig.products]);
 
   const effectiveTuning = useMemo(
     () => ({
@@ -500,27 +537,32 @@ export default function App() {
     setCameraPreset(cam);
   };
 
+  const archetypeLabel =
+    ARCHETYPE_BADGES[activeConfig.archetype ?? 'heritage_arch_flagship'] ??
+    'Bespoke 3D Flagship';
+
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {/* Full-Screen 3D Boutique Viewport (≥85% screen open per Hackathon Rule) */}
+      {/* Full-Bleed 3D Showroom Viewport */}
       <Canvas
         shadows
         dpr={[1, 2]}
         camera={{ position: CAMERA_PRESETS[init.cam].position, fov: 40, near: 0.1, far: 45 }}
         gl={{
           antialias: true,
+          preserveDrawingBuffer: true,
           powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 0.9,
+          toneMappingExposure: 0.92,
         }}
       >
         <color attach="background" args={[activeConfig.palette.wall]} />
-        <fog attach="fog" args={[activeConfig.palette.wall, 11, 23]} />
+        <fog attach="fog" args={[activeConfig.palette.wall, 11.5, 24]} />
 
         {!walkMode && <CameraRig preset={cameraPreset} instant={instantCamera} />}
 
         <BoutiqueWorld config={activeConfig}>
-          {/* Centre Court Hero Stand */}
+          {/* Hero Apparel Stand */}
           {heroRackItems.length > 0 && activeConfig.racks[0] && (
             <BoutiqueRack
               rack={activeConfig.racks[0]}
@@ -534,7 +576,7 @@ export default function App() {
             />
           )}
 
-          {/* Secondary Capsule Rail in Background */}
+          {/* Companion Capsule Apparel Rail */}
           {secondaryRackItems.length > 0 && activeConfig.racks[1] && (
             <BoutiqueRack
               rack={activeConfig.racks[1]}
@@ -548,7 +590,33 @@ export default function App() {
             />
           )}
 
-          {/* Roblox-Style 3rd/1st-Person Walkable Avatar Mode */}
+          {/* 3D Physical Hard-Goods & Accessories on Table & Pedestals */}
+          {pedestalProducts.map((prod) => {
+            const anchorPos = DISPLAY_FIXTURE_ANCHORS[prod.placement];
+            const rotY =
+              prod.placement === 'right_pedestal'
+                ? -0.46
+                : prod.placement === 'left_pedestal'
+                  ? 0.44
+                  : -0.22;
+            return (
+              <PedestalProduct3D
+                key={prod.id}
+                spec={prod}
+                position={anchorPos}
+                rotationY={rotY}
+                metalColor={activeConfig.palette.rackMetal}
+                metalness={activeConfig.metalness}
+                metalRoughness={activeConfig.metalRoughness}
+                accentColor={activeConfig.palette.accent}
+                palette={activeConfig.palette}
+                selected={selectedGarmentId === prod.id}
+                onSelect={(s) => setSelectedGarmentId(s.id)}
+              />
+            );
+          })}
+
+          {/* Clean First-Person Architectural Gallery Walkthrough */}
           {walkMode && (
             <RobloxPlayerController
               config={activeConfig}
@@ -560,11 +628,11 @@ export default function App() {
             />
           )}
 
-          {/* Live Synthetic Shopper Swarm (6 Personas Walking & Voting YES/NO) */}
-          {swarmEnabled && (
+          {/* Formal Architectural Silhouette Product Judges */}
+          {judgesEnabled && (
             <ShopperSwarmLayer
               config={activeConfig}
-              enabled={swarmEnabled}
+              enabled={judgesEnabled}
               showSecondaryRack={secondaryRackItems.length > 0}
               resetKey={activeConfig.id}
               onConversionUpdate={setConversionStats}
@@ -582,7 +650,7 @@ export default function App() {
             zIndex: 50,
             borderRadius: 18,
             border: '2px dashed #d4af37',
-            background: 'rgba(18, 22, 18, 0.72)',
+            background: 'rgba(14, 15, 16, 0.76)',
             backdropFilter: 'blur(8px)',
             display: 'flex',
             flexDirection: 'column',
@@ -594,54 +662,54 @@ export default function App() {
         >
           <Upload size={38} color="#d4af37" />
           <div style={{ fontSize: 20, fontWeight: 600, letterSpacing: '0.04em' }}>
-            Drop Any Clothing Photo to Hang in 3D
+            Drop Custom Product Photo onto Hero Stand
           </div>
           <div style={{ fontSize: 13, opacity: 0.78 }}>
-            Auto CIELAB cutout · Un-mirrored back synthesis · Sobel cotton normal map
+            Auto CIELAB cutout · 360° back synthesis · PBR cotton normal map
           </div>
         </div>
       )}
 
       {!init.hideHud && (
         <>
-          {/* Top-Center Live Website-to-3D-Brand-Shop Generator */}
+          {/* Top-Center URL -> Theme -> 3D World & Product Line Generator */}
           <UrlIngestBar
             onIngestComplete={handleIngestComplete}
             cutoutTolerance={tuning.cutoutTolerance}
             variant="floating"
-            defaultExpandedChips={false}
+            defaultExpandedChips={true}
           />
 
-          {/* Top-Left Brand DNA Badge */}
+          {/* Top-Left Brand Identity & World Architecture Badge */}
           <div
             style={{
               position: 'fixed',
               top: 16,
               left: 16,
               zIndex: 20,
-              maxWidth: 290,
-              background: 'rgba(18, 18, 17, 0.78)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255, 255, 255, 0.11)',
+              maxWidth: 300,
+              background: 'rgba(15, 16, 18, 0.80)',
+              backdropFilter: 'blur(14px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
               borderRadius: 12,
               padding: '10px 14px',
               display: 'flex',
               alignItems: 'center',
               gap: 12,
-              boxShadow: '0 8px 28px rgba(0,0,0,0.28)',
+              boxShadow: '0 8px 28px rgba(0,0,0,0.32)',
             }}
           >
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
                   fontSize: 9.5,
-                  letterSpacing: '0.15em',
+                  letterSpacing: '0.14em',
                   textTransform: 'uppercase',
                   color: '#d4af37',
                   fontWeight: 600,
                 }}
               >
-                GEMINI 4 · ELEMENT 119 ENGINE
+                {archetypeLabel}
               </div>
               <div
                 style={{
@@ -651,6 +719,9 @@ export default function App() {
                   letterSpacing: '0.06em',
                   color: '#f7f4ec',
                   lineHeight: 1.15,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >
                 {activeConfig.brandName}
@@ -662,14 +733,16 @@ export default function App() {
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  maxWidth: 195,
+                  maxWidth: 205,
                 }}
               >
-                {activeConfig.vibe}
+                {activeConfig.products
+                  ? `${activeConfig.products.length} Custom 3D Products · ${activeConfig.vibe}`
+                  : activeConfig.vibe}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 4 }}>
+            <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
               {[
                 activeConfig.palette.wall,
                 activeConfig.palette.floor,
@@ -678,10 +751,10 @@ export default function App() {
               ].map((hex, idx) => (
                 <span
                   key={idx}
-                  title={`Brand DNA ${hex}`}
+                  title={`Theme Swatch ${hex}`}
                   style={{
-                    width: 13,
-                    height: 13,
+                    width: 12,
+                    height: 12,
                     borderRadius: '50%',
                     background: hex,
                     border: '1px solid rgba(255,255,255,0.35)',
@@ -691,7 +764,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Roblox Controls Hint Pill when Walk Mode is Active */}
+          {/* Walkthrough Controls Hint */}
           {walkMode && (
             <div
               style={{
@@ -705,13 +778,13 @@ export default function App() {
               <RobloxControlsHint
                 povMode={povMode}
                 onTogglePov={() =>
-                  setPovMode((p) => (p === 'third_person' ? 'first_person' : 'third_person'))
+                  setPovMode((p) => (p === 'first_person' ? 'third_person' : 'first_person'))
                 }
               />
             </div>
           )}
 
-          {/* Bottom-Center Camera, Roblox Walk Mode, Shopper Swarm & Quality Compare Bar */}
+          {/* Bottom-Center Editorial Camera, Gallery Walkthrough & Silhouette Judges Bar */}
           <div
             style={{
               position: 'fixed',
@@ -723,12 +796,12 @@ export default function App() {
               alignItems: 'center',
               gap: 5,
               flexWrap: 'nowrap',
-              background: 'rgba(18, 18, 17, 0.84)',
-              backdropFilter: 'blur(12px)',
+              background: 'rgba(15, 16, 18, 0.84)',
+              backdropFilter: 'blur(14px)',
               border: '1px solid rgba(255,255,255,0.12)',
               borderRadius: 999,
               padding: '6px 9px',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.38)',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.40)',
             }}
           >
             <Camera size={13} style={{ marginLeft: 5, opacity: 0.65 }} />
@@ -764,7 +837,7 @@ export default function App() {
               }}
             />
 
-            {/* Roblox Walkable Mode Toggle */}
+            {/* Clean First-Person Gallery Walkthrough */}
             <button
               onClick={() => setWalkMode((w) => !w)}
               style={{
@@ -780,99 +853,69 @@ export default function App() {
                 alignItems: 'center',
                 gap: 5,
                 background: walkMode
-                  ? 'rgba(212, 175, 55, 0.28)'
-                  : 'rgba(255,255,255,0.06)',
+                  ? 'rgba(212, 175, 55, 0.25)'
+                  : 'rgba(255,255,255,0.05)',
                 color: '#f7f4ec',
                 whiteSpace: 'nowrap',
               }}
             >
-              <Gamepad2 size={13} color="#e7c96b" />
-              {walkMode ? 'Walking Store (WASD)' : 'Walk Store (Roblox)'}
+              <Compass size={13} color="#e7c96b" />
+              {walkMode ? 'Exit Walkthrough' : 'Walk Gallery'}
             </button>
 
-            {/* Synthetic Shopper Swarm Toggle */}
+            {/* Formal Silhouette Product Judges Toggle */}
             <button
-              onClick={() => setSwarmEnabled((s) => !s)}
+              onClick={() => setJudgesEnabled((s) => !s)}
               style={{
-                border: swarmEnabled
-                  ? '1px solid rgba(110, 210, 145, 0.7)'
+                border: judgesEnabled
+                  ? '1px solid rgba(132, 198, 155, 0.65)'
                   : '1px solid rgba(255,255,255,0.18)',
                 cursor: 'pointer',
-                padding: '5px 11px',
+                padding: '5px 12px',
                 borderRadius: 999,
                 fontSize: 11,
                 fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 5,
-                background: swarmEnabled
-                  ? 'rgba(54, 138, 85, 0.38)'
-                  : 'rgba(255,255,255,0.06)',
+                background: judgesEnabled
+                  ? 'rgba(54, 118, 82, 0.36)'
+                  : 'rgba(255,255,255,0.05)',
                 color: '#f7f4ec',
                 whiteSpace: 'nowrap',
               }}
             >
-              <Users size={13} color={swarmEnabled ? '#8ef0b0' : '#d8d4ca'} />
-              {swarmEnabled
+              <Scale size={13} color={judgesEnabled ? '#9be4b4' : '#d8d4ca'} />
+              {judgesEnabled
                 ? conversionStats && conversionStats.totalDecisions > 0
-                  ? `Shoppers: ${Math.round(conversionStats.conversionRate * 100)}% YES (${conversionStats.buys}/${conversionStats.totalDecisions})`
-                  : 'Shoppers Active...'
-                : 'Release Shoppers'}
-            </button>
-
-            {/* 1-Click Judge Compare Toggle */}
-            <button
-              onClick={() =>
-                setTuning((p) => ({
-                  ...p,
-                  renderMode: p.renderMode === 'volumetric' ? 'naive_flat' : 'volumetric',
-                }))
-              }
-              title="Compare our 3D Volumetric Dual-Shell Cloth + Hanger vs. a standard flat 2D cutout"
-              style={{
-                border:
-                  tuning.renderMode === 'volumetric'
-                    ? '1px solid rgba(124, 184, 108, 0.55)'
-                    : '1px solid rgba(235, 110, 90, 0.55)',
-                cursor: 'pointer',
-                padding: '5px 11px',
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                background:
-                  tuning.renderMode === 'volumetric'
-                    ? 'rgba(84, 112, 73, 0.42)'
-                    : 'rgba(180, 62, 48, 0.35)',
-                color: '#f7f4ec',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <Sparkles
-                size={12}
-                color={tuning.renderMode === 'volumetric' ? '#a6e094' : '#ff9b8a'}
-              />
-              {tuning.renderMode === 'volumetric' ? '3D Cloth: ON' : 'Flat Cutout'}
+                  ? `Panel Verdict: ${Math.round(conversionStats.conversionRate * 100)}% APPROVE (${conversionStats.buys}/${conversionStats.totalDecisions})`
+                  : 'Judges Convening...'
+                : 'Convene Judges'}
             </button>
           </div>
 
-          {/* Top-Right Compact Boutique Inspector */}
+          {/* Bottom-Right Shopify AI Storefront Concierge & Bag Drawer */}
+          <ShopifyConciergeDrawer
+            config={activeConfig}
+            focusedProductId={selectedGarmentId}
+            onFocusProduct={setSelectedGarmentId}
+          />
+
+          {/* Top-Right Collapsible World & Studio Drawer (Collapsed by default so screen stays super clean!) */}
           <div
             style={{
               position: 'fixed',
               top: 16,
               right: 16,
               zIndex: 20,
-              width: 274,
+              width: 266,
               maxHeight: 'calc(100vh - 96px)',
               overflowY: 'auto',
-              background: 'rgba(18, 18, 17, 0.80)',
+              background: 'rgba(15, 16, 18, 0.80)',
               backdropFilter: 'blur(14px)',
               border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 14,
-              padding: '12px 14px',
+              borderRadius: 12,
+              padding: '10px 13px',
               boxShadow: '0 12px 34px rgba(0,0,0,0.36)',
               fontSize: 12,
             }}
@@ -888,61 +931,14 @@ export default function App() {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600 }}>
                 <Wand2 size={14} color="#d4af37" />
-                <span>Garment & World Studio</span>
+                <span>World Themes & Studio</span>
               </div>
               {hudCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
             </div>
 
             {!hudCollapsed && (
               <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 11 }}>
-                {/* Upload / Dropzone */}
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{
-                    border: '1px dashed rgba(212, 175, 55, 0.5)',
-                    borderRadius: 9,
-                    padding: '9px 10px',
-                    textAlign: 'center',
-                    cursor: 'pointer',
-                    background: 'rgba(212, 175, 55, 0.06)',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      color: '#e7c96b',
-                      fontWeight: 600,
-                      fontSize: 11.5,
-                    }}
-                  >
-                    <Upload size={13} />
-                    <span>
-                      {isProcessingUpload
-                        ? 'Normalizing Garment...'
-                        : uploadedFileName
-                          ? `Loaded: ${uploadedFileName}`
-                          : 'Drop or Upload Clothing Photo'}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 10.5, opacity: 0.65, marginTop: 2 }}>
-                    Instant CIELAB cutout + 360° back + normal map
-                  </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) handleUploadedFile(f);
-                    }}
-                  />
-                </div>
-
-                {/* Garment Pipeline Source Mode */}
+                {/* 4 Architectural World Archetypes */}
                 <div>
                   <div
                     style={{
@@ -951,56 +947,71 @@ export default function App() {
                       letterSpacing: '0.08em',
                       opacity: 0.65,
                       marginBottom: 5,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
                     }}
                   >
-                    Garment Normalization Stage
+                    <Eye size={11} />
+                    <span>4 Reference World Archetypes</span>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-                    <button
-                      onClick={() => {
-                        setCustomPaletteOverride(null);
-                        setTuning((p) => ({ ...p, sourceMode: 'ai_normalized' }));
-                      }}
-                      style={{
-                        padding: '6px 8px',
-                        borderRadius: 7,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        border:
-                          tuning.sourceMode === 'ai_normalized'
-                            ? '1px solid #d4af37'
-                            : '1px solid rgba(255,255,255,0.12)',
-                        background:
-                          tuning.sourceMode === 'ai_normalized'
-                            ? 'rgba(212, 175, 55, 0.2)'
-                            : 'rgba(255,255,255,0.04)',
-                        color: '#f5f2eb',
-                      }}
-                    >
-                      Physics Hanging
-                    </button>
-                    <button
-                      onClick={() => setTuning((p) => ({ ...p, sourceMode: 'raw_cutout' }))}
-                      style={{
-                        padding: '6px 8px',
-                        borderRadius: 7,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        border:
-                          tuning.sourceMode === 'raw_cutout'
-                            ? '1px solid #d4af37'
-                            : '1px solid rgba(255,255,255,0.12)',
-                        background:
-                          tuning.sourceMode === 'raw_cutout'
-                            ? 'rgba(212, 175, 55, 0.2)'
-                            : 'rgba(255,255,255,0.04)',
-                        color: '#f5f2eb',
-                      }}
-                    >
-                      Raw Flat-Lay Cutout
-                    </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {Object.values(STORE_PRESETS).map((preset) => {
+                      const active = !ingestedStore && preset.id === presetId;
+                      return (
+                        <button
+                          key={preset.id}
+                          onClick={() => {
+                            setIngestedStore(null);
+                            setCustomPaletteOverride(null);
+                            setPresetId(preset.id);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '6px 9px',
+                            borderRadius: 7,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            border: active
+                              ? '1px solid rgba(212,175,55,0.75)'
+                              : '1px solid rgba(255,255,255,0.08)',
+                            background: active
+                              ? 'rgba(212, 175, 55, 0.15)'
+                              : 'rgba(255,255,255,0.03)',
+                            color: '#f5f2eb',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 11.5, fontWeight: active ? 600 : 500 }}>
+                              {preset.brandName}
+                            </div>
+                            <div style={{ fontSize: 9.5, opacity: 0.6 }}>
+                              {ARCHETYPE_BADGES[preset.archetype ?? 'heritage_arch_flagship']}
+                            </div>
+                          </div>
+                          <span style={{ display: 'flex', gap: 3 }}>
+                            {[
+                              preset.palette.wall,
+                              preset.palette.accent,
+                              preset.palette.rackMetal,
+                            ].map((c, i) => (
+                              <span
+                                key={i}
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: '50%',
+                                  background: c,
+                                  border: '1px solid rgba(255,255,255,0.3)',
+                                }}
+                              />
+                            ))}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1019,7 +1030,7 @@ export default function App() {
                     }}
                   >
                     <Layers size={11} />
-                    <span>Boutique Rack Merchandising</span>
+                    <span>Apparel Rack Layout</span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
                     {(
@@ -1055,85 +1066,52 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Boutique Brand DNA World Presets */}
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10.5,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      opacity: 0.65,
-                      marginBottom: 5,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 5,
-                    }}
-                  >
-                    <Eye size={11} />
-                    <span>Preset Brand Worlds</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {Object.values(STORE_PRESETS).map((preset) => {
-                      const active = !ingestedStore && preset.id === presetId;
-                      return (
-                        <button
-                          key={preset.id}
-                          onClick={() => {
-                            setIngestedStore(null);
-                            setCustomPaletteOverride(null);
-                            setPresetId(preset.id);
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '6px 9px',
-                            borderRadius: 7,
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            border: active
-                              ? '1px solid rgba(212,175,55,0.75)'
-                              : '1px solid rgba(255,255,255,0.08)',
-                            background: active
-                              ? 'rgba(212, 175, 55, 0.15)'
-                              : 'rgba(255,255,255,0.03)',
-                            color: '#f5f2eb',
-                          }}
-                        >
-                          <span style={{ fontSize: 11.5, fontWeight: active ? 600 : 500 }}>
-                            {preset.brandName}
-                          </span>
-                          <span style={{ display: 'flex', gap: 3 }}>
-                            {[
-                              preset.palette.wall,
-                              preset.palette.accent,
-                              preset.palette.rackMetal,
-                            ].map((c, i) => (
-                              <span
-                                key={i}
-                                style={{
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: '50%',
-                                  background: c,
-                                  border: '1px solid rgba(255,255,255,0.3)',
-                                }}
-                              />
-                            ))}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Collapsible Fine-Tuning Sliders */}
+                {/* Custom Garment Cutout Upload */}
                 <div
+                  onClick={() => fileInputRef.current?.click()}
                   style={{
-                    borderTop: '1px solid rgba(255,255,255,0.1)',
-                    paddingTop: 8,
+                    border: '1px dashed rgba(212, 175, 55, 0.45)',
+                    borderRadius: 9,
+                    padding: '8px 10px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    background: 'rgba(212, 175, 55, 0.05)',
                   }}
                 >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      color: '#e7c96b',
+                      fontWeight: 600,
+                      fontSize: 11,
+                    }}
+                  >
+                    <Upload size={12} />
+                    <span>
+                      {isProcessingUpload
+                        ? 'Normalizing Photo...'
+                        : uploadedFileName
+                          ? `Custom: ${uploadedFileName}`
+                          : 'Optional: Upload Custom Garment Photo'}
+                    </span>
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadedFile(f);
+                    }}
+                  />
+                </div>
+
+                {/* Collapsible Cloth & Cutout Controls */}
+                <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 8 }}>
                   <button
                     onClick={() => setShowSliders((s) => !s)}
                     style={{
@@ -1151,7 +1129,7 @@ export default function App() {
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Sliders size={12} color="#d4af37" />
-                      Cloth Physics & Cutout Controls
+                      Material & Drape Controls
                     </span>
                     {showSliders ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                   </button>
@@ -1165,93 +1143,34 @@ export default function App() {
                         gap: 8,
                       }}
                     >
-                      <label style={{ fontSize: 11 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Cutout ΔE Tolerance</span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                            {tuning.cutoutTolerance}
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min={8}
-                          max={52}
-                          step={1}
-                          value={tuning.cutoutTolerance}
-                          onChange={(e) =>
-                            setTuning((p) => ({
-                              ...p,
-                              cutoutTolerance: Number(e.target.value),
-                            }))
-                          }
-                        />
-                      </label>
-
-                      <label style={{ fontSize: 11 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>3D Torso Drape Curve</span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                            {tuning.curveDepth.toFixed(2)}
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={0.22}
-                          step={0.005}
-                          value={tuning.curveDepth}
-                          onChange={(e) =>
-                            setTuning((p) => ({
-                              ...p,
-                              curveDepth: Number(e.target.value),
-                            }))
-                          }
-                        />
-                      </label>
-
-                      <label style={{ fontSize: 11 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Cotton Micro-Sheen</span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                            {tuning.fabricSheen.toFixed(2)}
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={tuning.fabricSheen}
-                          onChange={(e) =>
-                            setTuning((p) => ({
-                              ...p,
-                              fabricSheen: Number(e.target.value),
-                            }))
-                          }
-                        />
-                      </label>
-
-                      <label style={{ fontSize: 11 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span>Normal Fold Relief</span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                            {tuning.normalStrength.toFixed(2)}
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1.4}
-                          step={0.05}
-                          value={tuning.normalStrength}
-                          onChange={(e) =>
-                            setTuning((p) => ({
-                              ...p,
-                              normalStrength: Number(e.target.value),
-                            }))
-                          }
-                        />
-                      </label>
+                      <button
+                        onClick={() =>
+                          setTuning((p) => ({
+                            ...p,
+                            renderMode:
+                              p.renderMode === 'volumetric' ? 'naive_flat' : 'volumetric',
+                          }))
+                        }
+                        style={{
+                          padding: '5px 8px',
+                          borderRadius: 6,
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          background: 'rgba(255,255,255,0.06)',
+                          color: '#f5f2eb',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 5,
+                        }}
+                      >
+                        <Sparkles size={11} color="#d4af37" />
+                        {tuning.renderMode === 'volumetric'
+                          ? 'Mode: 3D Volumetric Mesh'
+                          : 'Mode: Naive Flat Plane'}
+                      </button>
 
                       <label style={{ fontSize: 11 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between' }}>

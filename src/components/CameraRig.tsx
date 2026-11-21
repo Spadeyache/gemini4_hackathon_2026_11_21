@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 
-export type CameraPresetId = 'hero' | 'macro' | 'side' | 'rear' | 'wide';
+export type CameraPresetId = 'hero' | 'objects' | 'macro' | 'side' | 'rear' | 'wide';
 
 export const CAMERA_PRESETS: Record<
   CameraPresetId,
@@ -15,12 +15,17 @@ export const CAMERA_PRESETS: Record<
   }
 > = {
   hero: {
-    label: 'Hero Rack',
-    position: [0.38, 1.48, 2.95],
-    target: [0, 1.24, 0],
+    label: 'Showroom',
+    position: [0.35, 1.52, 3.35],
+    target: [0.18, 1.16, -0.05],
+  },
+  objects: {
+    label: '3D Objects',
+    position: [0.85, 1.34, 2.28],
+    target: [1.68, 0.92, 0.12],
   },
   macro: {
-    label: 'Hanger & Fabric',
+    label: 'Garment Detail',
     position: [0.22, 1.56, 1.32],
     target: [0, 1.38, 0.02],
   },

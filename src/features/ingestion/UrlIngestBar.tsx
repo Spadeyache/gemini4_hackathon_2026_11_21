@@ -1,16 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  Box,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Globe,
+  Layers,
   Loader2,
   Sparkles,
   X,
 } from 'lucide-react';
 import {
+  formatWorldArchetypeLabel,
   ingestBrandWebsite,
   type BrandIngestSummary,
   type BrandWebsiteIngestResult,
@@ -18,13 +21,13 @@ import {
 } from './urlBrandIngest';
 
 export interface UrlIngestBarProps {
-  /** Invoked when the scraped StoreConfig + browser-normalized 3D garment textures are ready */
+  /** Invoked when the synthesized StoreConfig + invented 3D product line are ready */
   onIngestComplete: (result: BrandWebsiteIngestResult) => void;
-  /** Perceptual CIELAB cutout tolerance passed to `processGarmentInBrowser` (default 24) */
+  /** Perceptual CIELAB cutout tolerance passed if an explicit customCutoutUrl is present (default 24) */
   cutoutTolerance?: number;
   /** Placement style: floating top-center glassmorphic HUD bar (default) or inline block */
   variant?: 'floating' | 'inline';
-  /** Whether the 3 quick-test live URL chips start visible (default true) */
+  /** Whether the 4 quick-demo URL chips start visible */
   defaultExpandedChips?: boolean;
   /** Optional initial URL text */
   initialUrl?: string;
@@ -39,29 +42,35 @@ interface QuickBrandChip {
 
 const QUICK_TEST_BRANDS: readonly QuickBrandChip[] = [
   {
-    label: 'kotn.com',
-    url: 'kotn.com',
-    vibeHint: 'Organic Knits',
-    swatchHex: '#C5A787',
+    label: 'linear.app',
+    url: 'linear.app',
+    vibeHint: 'Tech Pavilion',
+    swatchHex: '#5E6AD2',
+  },
+  {
+    label: 'bluebottlecoffee.com',
+    url: 'bluebottlecoffee.com',
+    vibeHint: 'Artisanal Cafe',
+    swatchHex: '#00A5DF',
+  },
+  {
+    label: 'a24films.com',
+    url: 'a24films.com',
+    vibeHint: 'Concrete Loft',
+    swatchHex: '#E04836',
   },
   {
     label: 'rowingblazers.com',
     url: 'rowingblazers.com',
-    vibeHint: 'Club Sweaters',
+    vibeHint: 'Heritage Club',
     swatchHex: '#23395B',
-  },
-  {
-    label: 'golfwang.com',
-    url: 'golfwang.com',
-    vibeHint: 'Street Fleece',
-    swatchHex: '#E07A5F',
   },
 ];
 
 const PROGRESS_STEPS: ReadonlyArray<{ stepNumber: 1 | 2 | 3; title: string }> = [
-  { stepNumber: 1, title: '1. Scraping Brand & Catalog...' },
-  { stepNumber: 2, title: '2. Extracting Brand DNA...' },
-  { stepNumber: 3, title: '3. Normalizing Garments for 3D Racks...' },
+  { stepNumber: 1, title: '1. Analyzing Website Identity & Ethos...' },
+  { stepNumber: 2, title: '2. Designing Store Theme & Product Line...' },
+  { stepNumber: 3, title: '3. Building 3D World & Merchandising Fixtures...' },
 ];
 
 export function UrlIngestBar({
@@ -76,19 +85,19 @@ export function UrlIngestBar({
   const [isIngesting, setIsIngesting] = useState<boolean>(false);
   const [progress, setProgress] = useState<IngestProgressUpdate | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [lastSuccess, setLastSuccess] = useState<{
+  const [themeBrief, setThemeBrief] = useState<{
     summary: BrandIngestSummary;
     swatches: string[];
   } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  const successTimerRef = useRef<number | null>(null);
+  const briefTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
-      if (successTimerRef.current !== null) {
-        window.clearTimeout(successTimerRef.current);
+      if (briefTimerRef.current !== null) {
+        window.clearTimeout(briefTimerRef.current);
       }
     };
   }, []);
@@ -98,7 +107,9 @@ export function UrlIngestBar({
       const cleaned = rawTargetUrl.trim();
       if (!cleaned || isIngesting) {
         if (!cleaned) {
-          setErrorMessage('Paste any live brand or Shopify store URL first (e.g. kotn.com).');
+          setErrorMessage(
+            'Enter any website URL first (e.g. linear.app, bluebottlecoffee.com, a24films.com).'
+          );
         }
         return;
       }
@@ -107,18 +118,18 @@ export function UrlIngestBar({
       const controller = new AbortController();
       abortRef.current = controller;
 
-      if (successTimerRef.current !== null) {
-        window.clearTimeout(successTimerRef.current);
-        successTimerRef.current = null;
+      if (briefTimerRef.current !== null) {
+        window.clearTimeout(briefTimerRef.current);
+        briefTimerRef.current = null;
       }
 
       setErrorMessage(null);
-      setLastSuccess(null);
+      setThemeBrief(null);
       setIsIngesting(true);
       setProgress({
-        stage: 'scraping_catalog',
+        stage: 'analyzing_identity',
         stepNumber: 1,
-        label: '1. Scraping Brand & Catalog...',
+        label: '1. Analyzing Website Identity & Ethos...',
         detail: `Connecting to ${cleaned}...`,
       });
 
@@ -132,18 +143,21 @@ export function UrlIngestBar({
 
         setIsIngesting(false);
         setProgress(null);
+        if (!defaultExpandedChips) {
+          setChipsExpanded(false);
+        }
 
         const p = result.storeConfig.palette;
-        setLastSuccess({
+        setThemeBrief({
           summary: result.summary,
           swatches: [p.wall, p.floor, p.accent, p.rackMetal],
         });
 
         onIngestComplete(result);
 
-        successTimerRef.current = window.setTimeout(() => {
-          setLastSuccess(null);
-        }, 5500);
+        briefTimerRef.current = window.setTimeout(() => {
+          setThemeBrief(null);
+        }, 16000);
       } catch (err) {
         if (controller.signal.aborted) return;
         setIsIngesting(false);
@@ -151,11 +165,11 @@ export function UrlIngestBar({
         setErrorMessage(
           err instanceof Error
             ? err.message
-            : 'Unable to generate 3D shop from that URL. Try another public brand website.'
+            : 'Unable to generate 3D shop from that URL. Try another public website.'
         );
       }
     },
-    [cutoutTolerance, isIngesting, onIngestComplete]
+    [cutoutTolerance, defaultExpandedChips, isIngesting, onIngestComplete]
   );
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -176,8 +190,8 @@ export function UrlIngestBar({
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 25,
-          width: 'min(520px, calc(100vw - 640px))',
-          minWidth: 340,
+          width: 'min(560px, calc(100vw - 620px))',
+          minWidth: 350,
           display: 'flex',
           flexDirection: 'column',
           gap: 7,
@@ -213,7 +227,7 @@ export function UrlIngestBar({
       {/* Main Compact Glassmorphic URL Input Bar */}
       <div
         style={{
-          background: 'rgba(18, 18, 17, 0.82)',
+          background: 'rgba(18, 18, 17, 0.84)',
           backdropFilter: 'blur(14px)',
           WebkitBackdropFilter: 'blur(14px)',
           border: '1px solid rgba(255, 255, 255, 0.13)',
@@ -243,12 +257,17 @@ export function UrlIngestBar({
             type="text"
             value={urlInput}
             disabled={isIngesting}
+            onFocus={() => {
+              if (!chipsExpanded && !isIngesting) {
+                setChipsExpanded(true);
+              }
+            }}
             onChange={(e) => {
               setUrlInput(e.target.value);
               if (errorMessage) setErrorMessage(null);
             }}
-            placeholder="Paste any live brand URL (kotn.com, rowingblazers.com...)"
-            aria-label="Store or brand website URL"
+            placeholder="Enter any website URL (linear.app, bluebottlecoffee.com, a24films.com...)"
+            aria-label="Website or brand URL"
             style={{
               flex: 1,
               minWidth: 0,
@@ -284,7 +303,7 @@ export function UrlIngestBar({
           <button
             type="button"
             onClick={() => setChipsExpanded((v) => !v)}
-            title={chipsExpanded ? 'Hide example brand chips' : 'Show example live brand URLs'}
+            title={chipsExpanded ? 'Hide demo website chips' : 'Show demo website URLs'}
             style={{
               background: 'rgba(255, 255, 255, 0.05)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -330,7 +349,7 @@ export function UrlIngestBar({
                   size={13}
                   style={{ animation: 'urlIngestSpin 0.9s linear infinite' }}
                 />
-                <span>Building Shop...</span>
+                <span>Designing World...</span>
               </>
             ) : (
               <>
@@ -341,7 +360,7 @@ export function UrlIngestBar({
           </button>
         </form>
 
-        {/* 3 Quick-Test Live URL Chips */}
+        {/* 4 Diverse Non-Store & Brand Quick-Demo Chips */}
         {chipsExpanded && (
           <div
             style={{
@@ -355,7 +374,7 @@ export function UrlIngestBar({
           >
             <span
               style={{
-                fontSize: 10,
+                fontSize: 9.5,
                 textTransform: 'uppercase',
                 letterSpacing: '0.09em',
                 color: 'rgba(245, 242, 235, 0.48)',
@@ -363,7 +382,7 @@ export function UrlIngestBar({
                 marginRight: 2,
               }}
             >
-              Try Live:
+              Demo Worlds:
             </span>
             {QUICK_TEST_BRANDS.map((chip) => (
               <button
@@ -372,19 +391,19 @@ export function UrlIngestBar({
                 disabled={isIngesting}
                 onClick={() => handleChipClick(chip.url)}
                 className="agy-ingest-chip"
-                title={`Ingest live catalog & Brand DNA from ${chip.url} (${chip.vibeHint})`}
+                title={`Design a bespoke ${chip.vibeHint} 3D flagship & 6-product line for ${chip.url}`}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 5,
-                  padding: '3px 8px',
+                  gap: 4.5,
+                  padding: '3px 7.5px',
                   borderRadius: 999,
-                  fontSize: 10.5,
+                  fontSize: 10,
                   fontWeight: 500,
                   cursor: isIngesting ? 'not-allowed' : 'pointer',
                   background: 'rgba(255, 255, 255, 0.05)',
                   border: '1px solid rgba(255, 255, 255, 0.11)',
-                  color: 'rgba(245, 242, 235, 0.84)',
+                  color: 'rgba(245, 242, 235, 0.86)',
                   transition: 'all 0.14s ease',
                   opacity: isIngesting ? 0.55 : 1,
                 }}
@@ -395,24 +414,24 @@ export function UrlIngestBar({
                     height: 7,
                     borderRadius: '50%',
                     background: chip.swatchHex,
-                    border: '1px solid rgba(255,255,255,0.4)',
+                    border: '1px solid rgba(255,255,255,0.45)',
                   }}
                 />
                 <span>{chip.label}</span>
-                <span style={{ opacity: 0.52, fontSize: 9.5 }}>· {chip.vibeHint}</span>
+                <span style={{ opacity: 0.56, fontSize: 9.2 }}>· {chip.vibeHint}</span>
               </button>
             ))}
           </div>
         )}
       </div>
 
-      {/* Step-by-Step Live Ingestion Progress Popover */}
+      {/* Step-by-Step Creative Director Pipeline Popover */}
       {isIngesting && progress && (
         <div
           role="status"
           aria-live="polite"
           style={{
-            background: 'rgba(16, 16, 15, 0.90)',
+            background: 'rgba(16, 16, 15, 0.91)',
             backdropFilter: 'blur(16px)',
             WebkitBackdropFilter: 'blur(16px)',
             border: '1px solid rgba(212, 175, 55, 0.35)',
@@ -497,66 +516,130 @@ export function UrlIngestBar({
         </div>
       )}
 
-      {/* Completion Confirmation Toast */}
-      {!isIngesting && lastSuccess && (
+      {/* Sleek Dismissible Brand Theme Brief Popover */}
+      {!isIngesting && themeBrief && (
         <div
+          role="region"
+          aria-label="Brand Theme Brief"
           style={{
-            background: 'rgba(20, 26, 20, 0.88)',
-            backdropFilter: 'blur(14px)',
-            WebkitBackdropFilter: 'blur(14px)',
-            border: '1px solid rgba(166, 224, 148, 0.38)',
-            borderRadius: 11,
-            padding: '8px 12px',
-            boxShadow: '0 10px 26px rgba(0, 0, 0, 0.35)',
+            background: 'rgba(17, 19, 18, 0.90)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+            border: '1px solid rgba(212, 175, 55, 0.36)',
+            borderRadius: 12,
+            padding: '10px 13px',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.42)',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            fontSize: 11.5,
+            flexDirection: 'column',
+            gap: 7,
             color: '#f7f4ec',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <CheckCircle2 size={15} color="#a6e094" style={{ flexShrink: 0 }} />
-            <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              <strong style={{ color: '#e7c96b' }}>{lastSuccess.summary.brandName}</strong>
-              <span style={{ opacity: 0.84 }}>
-                {' '}
-                · {lastSuccess.summary.processedGarmentCount} garments hung in 3D (
-                {(lastSuccess.summary.elapsedMs / 1000).toFixed(1)}s)
+          {/* Top Header: Brand Name + Archetype Pill + Product Count Pill + Swatches + Dismiss */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', minWidth: 0 }}>
+              <CheckCircle2 size={14} color="#a6e094" style={{ flexShrink: 0 }} />
+              <strong
+                style={{
+                  fontSize: 12,
+                  letterSpacing: '0.06em',
+                  color: '#e7c96b',
+                }}
+              >
+                {themeBrief.summary.brandName}
+              </strong>
+
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  background: 'rgba(212, 175, 55, 0.14)',
+                  border: '1px solid rgba(212, 175, 55, 0.34)',
+                  color: '#f3dfb0',
+                }}
+              >
+                <Layers size={10} />
+                {formatWorldArchetypeLabel(themeBrief.summary.archetype)}
               </span>
+
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  background: 'rgba(166, 224, 148, 0.12)',
+                  border: '1px solid rgba(166, 224, 148, 0.30)',
+                  color: '#c8f0bc',
+                }}
+              >
+                <Box size={10} />
+                {themeBrief.summary.inventedProductCount} 3D Products (
+                {(themeBrief.summary.elapsedMs / 1000).toFixed(1)}s)
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              {themeBrief.swatches.map((hex, i) => (
+                <span
+                  key={i}
+                  title={hex}
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: hex,
+                    border: '1px solid rgba(255,255,255,0.38)',
+                  }}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => setThemeBrief(null)}
+                aria-label="Dismiss Brand Theme Brief"
+                title="Dismiss Brand Theme Brief"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(245, 242, 235, 0.6)',
+                  cursor: 'pointer',
+                  padding: 2,
+                  marginLeft: 2,
+                  display: 'flex',
+                }}
+              >
+                <X size={13} />
+              </button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-            {lastSuccess.swatches.map((hex, i) => (
-              <span
-                key={i}
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: '50%',
-                  background: hex,
-                  border: '1px solid rgba(255,255,255,0.35)',
-                }}
-              />
-            ))}
-            <button
-              type="button"
-              onClick={() => setLastSuccess(null)}
-              aria-label="Dismiss notification"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'rgba(245, 242, 235, 0.55)',
-                cursor: 'pointer',
-                padding: 2,
-                marginLeft: 2,
-                display: 'flex',
-              }}
-            >
-              <X size={13} />
-            </button>
+          {/* Brand Ethos Creative Brief */}
+          <div
+            style={{
+              fontSize: 11,
+              lineHeight: 1.42,
+              color: 'rgba(247, 244, 236, 0.88)',
+              paddingTop: 5,
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            }}
+          >
+            {themeBrief.summary.brandEthos}
           </div>
         </div>
       )}

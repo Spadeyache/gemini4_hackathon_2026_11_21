@@ -4,10 +4,12 @@ import { RoundedBox } from '@react-three/drei';
 import type {
   GarmentAssetSet,
   GarmentTuningParams,
+  InventedProductSpec,
   RackPlacement,
   StorePalette,
 } from '../types/storeConfig';
 import { HangingGarment } from './HangingGarment';
+import { HangingApparel3D } from './products/Product3DFactory';
 
 export interface GarmentResolvedTextures {
   frontMap: THREE.Texture;
@@ -16,7 +18,7 @@ export interface GarmentResolvedTextures {
   aspect?: number;
 }
 
-export interface RackGarmentItem extends GarmentResolvedTextures {
+export interface RackGarmentItem {
   id: string;
   sku?: string;
   title?: string;
@@ -24,6 +26,11 @@ export interface RackGarmentItem extends GarmentResolvedTextures {
   subtitle?: string;
   price?: number;
   featured?: boolean;
+  productSpec?: InventedProductSpec;
+  frontMap?: THREE.Texture;
+  backMap?: THREE.Texture;
+  normalMap?: THREE.Texture;
+  aspect?: number;
 }
 
 export interface BoutiqueRackProps {
@@ -196,7 +203,7 @@ export const BoutiqueRack: React.FC<BoutiqueRackProps> = ({
       for (const asset of rack.items) {
         const resolved =
           resolveGarmentTextures?.(asset) ?? texturesById?.[asset.id];
-        if (resolved?.frontMap) {
+        if (resolved?.frontMap || asset.productSpec) {
           baseList.push({
             id: asset.id,
             sku: asset.sku,
@@ -205,10 +212,11 @@ export const BoutiqueRack: React.FC<BoutiqueRackProps> = ({
             subtitle: asset.subtitle,
             price: asset.price,
             featured: asset.featured,
-            frontMap: resolved.frontMap,
-            backMap: resolved.backMap,
-            normalMap: resolved.normalMap,
-            aspect: resolved.aspect ?? asset.aspect,
+            productSpec: asset.productSpec,
+            frontMap: resolved?.frontMap,
+            backMap: resolved?.backMap,
+            normalMap: resolved?.normalMap,
+            aspect: resolved?.aspect ?? asset.aspect,
           });
         }
       }
@@ -810,28 +818,56 @@ export const BoutiqueRack: React.FC<BoutiqueRackProps> = ({
       {/* =====================================================================
           3. VOLUMETRIC HANGING GARMENTS (HERO FACE-OUT & CAPSULE COMPANIONS)
          ===================================================================== */}
-      {layout.slots.map(({ item, pos, rotY, hookSwivelY }) => (
-        <HangingGarment
-          key={item.id}
-          frontMap={item.frontMap}
-          backMap={item.backMap}
-          normalMap={item.normalMap}
-          aspect={item.aspect}
-          position={pos}
-          rotationY={rotY}
-          hookSwivelY={hookSwivelY}
-          metalColor={palette.rackMetal}
-          woodColor={palette.hangerWood}
-          metalness={metalness}
-          metalRoughness={effectiveRoughness}
-          accentColor={palette.accent}
-          tuning={tuning}
-          selected={selectedGarmentId === item.id}
-          onSelect={onSelectGarment ? () => onSelectGarment(item.id) : undefined}
-          label={item.label ?? item.title}
-          price={item.price}
-        />
-      ))}
+      {layout.slots.map(({ item, pos, rotY, hookSwivelY }) => {
+        if (item.productSpec && !item.frontMap) {
+          return (
+            <HangingApparel3D
+              key={item.id}
+              spec={item.productSpec}
+              position={pos}
+              rotationY={rotY}
+              hookSwivelY={hookSwivelY}
+              metalColor={palette.rackMetal}
+              woodColor={palette.hangerWood}
+              metalness={metalness}
+              metalRoughness={effectiveRoughness}
+              accentColor={palette.accent}
+              tuning={tuning}
+              selected={selectedGarmentId === item.id}
+              onSelect={onSelectGarment ? () => onSelectGarment(item.id) : undefined}
+              label={item.label ?? item.title}
+              price={item.price}
+            />
+          );
+        }
+
+        if (!item.frontMap) {
+          return null;
+        }
+
+        return (
+          <HangingGarment
+            key={item.id}
+            frontMap={item.frontMap}
+            backMap={item.backMap}
+            normalMap={item.normalMap}
+            aspect={item.aspect}
+            position={pos}
+            rotationY={rotY}
+            hookSwivelY={hookSwivelY}
+            metalColor={palette.rackMetal}
+            woodColor={palette.hangerWood}
+            metalness={metalness}
+            metalRoughness={effectiveRoughness}
+            accentColor={palette.accent}
+            tuning={tuning}
+            selected={selectedGarmentId === item.id}
+            onSelect={onSelectGarment ? () => onSelectGarment(item.id) : undefined}
+            label={item.label ?? item.title}
+            price={item.price}
+          />
+        );
+      })}
     </group>
   );
 };

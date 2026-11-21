@@ -1,4 +1,8 @@
-import type { GarmentTuningParams, StoreConfig } from '../types/storeConfig';
+import type {
+  GarmentTuningParams,
+  InventedProductSpec,
+  StoreConfig,
+} from '../types/storeConfig';
 
 export const DEFAULT_PRESET_ID = 'good-shot-club';
 
@@ -15,12 +19,433 @@ export const DEFAULT_TUNING_PARAMS: GarmentTuningParams = {
   showCapsuleCompanions: true,
 };
 
+/* ============================================================================
+   3D PRODUCT LINEUPS PER ARCHETYPE PRESET
+   ============================================================================ */
+
+const GOOD_SHOT_PRODUCTS: InventedProductSpec[] = [
+  {
+    id: 'good-shot-ringer-tee',
+    sku: 'UT-PNTS-GSC-01',
+    title: 'Good Shot Club Ringer Tee',
+    subtitle: 'Uniqlo UT × Peanuts · Heavyweight Combed Cotton Jersey',
+    category: 'structured_tshirt',
+    placement: 'hero_rack',
+    price: 38,
+    primaryColor: '#F2EEEB',
+    secondaryColor: '#547049',
+    accentColor: '#C5A059',
+    graphicHeadline: 'GOOD SHOT CLUB',
+    graphicSubtext: 'CHAMPIONSHIP LAWN & COURT',
+    graphicMotif: 'monogram_crest',
+    materialFinish: 'combed_cotton',
+    designRationale:
+      'Hero archival ringer tee preserved from real studio photo cutout with Wimbledon sage collar & cuff binding.',
+    featured: true,
+    customCutoutUrl: '/assets/garments/normalized-front-cutout.png',
+  },
+  {
+    id: 'gsc-court-cap',
+    sku: 'GSC-CAP-04',
+    title: 'Centre Court 6-Panel Twill Cap',
+    subtitle: 'Brushed Wimbledon Sage Cotton Twill · Embroidered Crest',
+    category: 'structured_cap',
+    placement: 'center_table',
+    price: 48,
+    primaryColor: '#547049',
+    secondaryColor: '#F3EFE6',
+    accentColor: '#C5A059',
+    graphicHeadline: 'GOOD SHOT',
+    graphicSubtext: 'EST. 1974 · LAWN ARCHIVE',
+    graphicMotif: 'monogram_crest',
+    materialFinish: 'heavy_canvas',
+    designRationale:
+      'Translates the Wimbledon sage ringer trim and antique brass hardware into a heritage courtside 6-panel cap.',
+  },
+  {
+    id: 'gsc-archive-monograph',
+    sku: 'GSC-BOOK-05',
+    title: 'Championship Lawn & Court Vol. I',
+    subtitle: 'Linen-Bound Centenary Photography Monograph · Gold Foil',
+    category: 'hardcover_book',
+    placement: 'left_pedestal',
+    price: 75,
+    primaryColor: '#547049',
+    secondaryColor: '#F5EFE2',
+    accentColor: '#C5A059',
+    graphicHeadline: 'CENTRE COURT',
+    graphicSubtext: 'ARCHIVAL EDITION · PLATE 01',
+    graphicMotif: 'archival_seal',
+    designRationale:
+      'Grounds the collegiate racquet-club flagship with an heirloom cloth-bound coffee-table monograph.',
+  },
+  {
+    id: 'gsc-racquet-canvas-tote',
+    sku: 'GSC-TOTE-06',
+    title: 'Clubhouse Heavy Duck Court Tote',
+    subtitle: '18oz Unbleached Ecru Canvas · Sage Webbing Straps',
+    category: 'canvas_tote',
+    placement: 'right_pedestal',
+    price: 64,
+    primaryColor: '#F2ECE1',
+    secondaryColor: '#547049',
+    accentColor: '#C5A059',
+    graphicHeadline: 'GOOD SHOT CLUB',
+    graphicSubtext: 'RACQUET & LAWN PROVISION',
+    graphicMotif: 'monogram_crest',
+    materialFinish: 'heavy_canvas',
+    designRationale:
+      'Echoes unbleached cotton jersey and sage trim in a structured courtside carryall.',
+  },
+];
+
+const KINETIC_CONCRETE_PRODUCTS: InventedProductSpec[] = [
+  {
+    id: 'kl-monolith-hoodie',
+    sku: 'KL-ARC-HD-01',
+    title: 'Monolith 480GSM Box Hoodie',
+    subtitle: 'Kinetic Lab · Heavyweight Loopback Carbon Fleece',
+    category: 'heavyweight_hoodie',
+    placement: 'hero_rack',
+    price: 195,
+    primaryColor: '#1E2024',
+    secondaryColor: '#2C2F36',
+    accentColor: '#FF4D00',
+    graphicHeadline: 'KINETIC // 01',
+    graphicSubtext: 'MILAN · SHIBUYA ARCHIVE',
+    graphicMotif: 'geometric_grid',
+    materialFinish: 'brushed_fleece',
+    designRationale:
+      'Architectural dropped-shoulder 480GSM fleece engineered to mirror raw poured concrete with high-visibility safety orange telemetry.',
+    featured: true,
+  },
+  {
+    id: 'kl-stadium-varsity',
+    sku: 'KL-VARS-02',
+    title: 'Shibuya Technical Melton Jacket',
+    subtitle: 'Charcoal Ballistic Wool · Chalk Leather Contrast Sleeves',
+    category: 'varsity_jacket',
+    placement: 'capsule_rack',
+    price: 340,
+    primaryColor: '#25272C',
+    secondaryColor: '#E4E7EC',
+    accentColor: '#FF4D00',
+    graphicHeadline: 'KL-SYS',
+    graphicSubtext: 'DROP // TY-MI',
+    graphicMotif: 'orbital_rings',
+    materialFinish: 'merino_knit',
+    designRationale:
+      'Pairs industrial chrome snap hardware with stark brutalist contrast blocking.',
+  },
+  {
+    id: 'kl-telemetry-tee',
+    sku: 'KL-TEE-03',
+    title: 'Telemetry 280GSM Heavy Tee',
+    subtitle: 'Optic Chalk Combed Jersey · High-Density Grid Print',
+    category: 'structured_tshirt',
+    placement: 'capsule_rack',
+    price: 78,
+    primaryColor: '#EDEFF2',
+    secondaryColor: '#1E2024',
+    accentColor: '#FF4D00',
+    graphicHeadline: 'UNIT 04',
+    graphicSubtext: 'TECHNICAL SPECIMEN',
+    graphicMotif: 'minimal_typo',
+    materialFinish: 'combed_cotton',
+    designRationale:
+      'Provides bright gallery contrast against the charcoal concrete monolith wall.',
+  },
+  {
+    id: 'kl-ballistic-cap',
+    sku: 'KL-CAP-04',
+    title: 'Ballistic Nylon 6-Panel Cap',
+    subtitle: 'Matte Stealth Ripstop · International Orange Datum Stitch',
+    category: 'structured_cap',
+    placement: 'center_table',
+    price: 62,
+    primaryColor: '#1B1C1F',
+    secondaryColor: '#2E3138',
+    accentColor: '#FF4D00',
+    graphicHeadline: 'KINETIC',
+    graphicSubtext: 'ARCHIVE // 04',
+    graphicMotif: 'geometric_grid',
+    materialFinish: 'heavy_canvas',
+    designRationale:
+      'Technical headwear piece anchoring the poured-concrete center slab table.',
+  },
+  {
+    id: 'kl-brutalist-monograph',
+    sku: 'KL-BOOK-05',
+    title: 'Brutalist Spatial Systems 01',
+    subtitle: 'Exposed-Spine Industrial Architecture & Apparel Index',
+    category: 'hardcover_book',
+    placement: 'left_pedestal',
+    price: 90,
+    primaryColor: '#FF4D00',
+    secondaryColor: '#F0F2F5',
+    accentColor: '#18191C',
+    graphicHeadline: 'MONOLITH',
+    graphicSubtext: 'CONCRETE & FORM // 2026',
+    graphicMotif: 'geometric_grid',
+    designRationale:
+      'Safety-orange cloth monograph delivering an unmistakable gallery focal pop on the left concrete block.',
+  },
+  {
+    id: 'kl-stoneware-vessel',
+    sku: 'KL-MUG-06',
+    title: 'Cast-Basalt Lab Espresso Mug',
+    subtitle: 'Raw Matte Charcoal Stoneware · Kilned Orange Datum Line',
+    category: 'ceramic_mug',
+    placement: 'right_pedestal',
+    price: 44,
+    primaryColor: '#24262B',
+    secondaryColor: '#ECEFF4',
+    accentColor: '#FF4D00',
+    graphicHeadline: 'KL // LAB',
+    graphicSubtext: 'MILAN · SHIBUYA',
+    graphicMotif: 'minimal_typo',
+    materialFinish: 'matte_stoneware',
+    designRationale:
+      'Industrial café object translating board-formed concrete texture into tactile stoneware.',
+  },
+];
+
+const KYOTO_ATELIER_PRODUCTS: InventedProductSpec[] = [
+  {
+    id: 'ah-loopwheel-tee',
+    sku: 'AH-KYT-TEE-01',
+    title: 'Wakayama Loopwheel Organic Tee',
+    subtitle: 'Atelier Hinoki · Undyed Ecru Cotton & Smoked Moss Rib',
+    category: 'structured_tshirt',
+    placement: 'hero_rack',
+    price: 94,
+    primaryColor: '#EFE7D8',
+    secondaryColor: '#6B705C',
+    accentColor: '#A9714B',
+    graphicHeadline: 'ATELIER HINOKI',
+    graphicSubtext: 'ORGANIC TEXTILE STUDY · KYOTO',
+    graphicMotif: 'botanical_line',
+    materialFinish: 'combed_cotton',
+    designRationale:
+      'Slow-knit tubular organic cotton tee echoing natural rammed-earth plaster and smoked moss botanicals.',
+    featured: true,
+  },
+  {
+    id: 'ah-moss-hoodie',
+    sku: 'AH-HD-02',
+    title: 'Botanical Dyed French Terry Hoodie',
+    subtitle: 'Kyoto Moss Olive · Unbleached Hemp Drawcords',
+    category: 'heavyweight_hoodie',
+    placement: 'capsule_rack',
+    price: 210,
+    primaryColor: '#6B705C',
+    secondaryColor: '#DFD2BE',
+    accentColor: '#EAE0D0',
+    graphicHeadline: 'KYOTO STUDY',
+    graphicSubtext: 'SMALL-BATCH PLANT DYE',
+    graphicMotif: 'botanical_line',
+    materialFinish: 'brushed_fleece',
+    designRationale:
+      'Deep moss olive plant-dyed fleece harmonizing with the white-oak louver screen.',
+  },
+  {
+    id: 'ah-linen-blouson',
+    sku: 'AH-JKT-03',
+    title: 'Raw Flax & Hinoki Chore Jacket',
+    subtitle: 'Hand-Loomed Oatmeal Linen · Patinated Bronze Snaps',
+    category: 'varsity_jacket',
+    placement: 'capsule_rack',
+    price: 275,
+    primaryColor: '#C8B79E',
+    secondaryColor: '#EFE8DA',
+    accentColor: '#3A3532',
+    graphicHeadline: 'HINOKI · 02',
+    graphicSubtext: 'ARTISANAL CRAFT EDITION',
+    graphicMotif: 'archival_seal',
+    materialFinish: 'merino_knit',
+    designRationale:
+      'Quiet-luxury outer layer crafted in warm flax and raw ecru tones.',
+  },
+  {
+    id: 'ah-botanical-essence',
+    sku: 'AH-APOTH-04',
+    title: 'Hinoki & Smoked Vetiver Room Oil',
+    subtitle: '200ml UV-Amber Apothecary Glass · Washi Paper Label',
+    category: 'apothecary_bottle',
+    placement: 'center_table',
+    price: 68,
+    primaryColor: '#634328',
+    secondaryColor: '#F3EBD9',
+    accentColor: '#3A3532',
+    graphicHeadline: 'HINOKI NO. 04',
+    graphicSubtext: 'AROMATIC BOTANICAL ESSENCE',
+    graphicMotif: 'botanical_line',
+    materialFinish: 'frosted_glass',
+    designRationale:
+      'Signature Aesop-inspired apothecary vessel resting on the solid white-oak craft table.',
+  },
+  {
+    id: 'ah-kurashiki-tote',
+    sku: 'AH-TOTE-05',
+    title: 'Kurashiki Shuttle-Loom Linen Tote',
+    subtitle: 'Undyed Hemp-Cotton Duck · Vegetable-Tanned Chestnut Strap',
+    category: 'canvas_tote',
+    placement: 'left_pedestal',
+    price: 82,
+    primaryColor: '#E7DCC8',
+    secondaryColor: '#7A5A3C',
+    accentColor: '#6B705C',
+    graphicHeadline: 'ATELIER HINOKI',
+    graphicSubtext: 'WOVEN IN OKAYAMA',
+    graphicMotif: 'botanical_line',
+    materialFinish: 'heavy_canvas',
+    designRationale:
+      'Celebrates raw tactile Japanese canvas weave atop the timber-clad left plinth.',
+  },
+  {
+    id: 'ah-shigaraki-mug',
+    sku: 'AH-MUG-06',
+    title: 'Shigaraki Wood-Fired Tea Vessel',
+    subtitle: 'Hand-Thrown Speckled Clay · Natural Ash-Moss Glaze',
+    category: 'ceramic_mug',
+    placement: 'right_pedestal',
+    price: 52,
+    primaryColor: '#D8C8B0',
+    secondaryColor: '#6B705C',
+    accentColor: '#3A3532',
+    graphicHeadline: 'HINOKI KILN',
+    graphicSubtext: 'SHIGARAKI STONEWARE',
+    graphicMotif: 'archival_seal',
+    materialFinish: 'matte_stoneware',
+    designRationale:
+      'Small-batch ceramic craft object echoing the studio’s clay plaster walls.',
+  },
+];
+
+const LINEAR_SYSTEMS_PRODUCTS: InventedProductSpec[] = [
+  {
+    id: 'ln-precision-hoodie',
+    sku: 'LN-OS-HD-01',
+    title: '0.1mm Engineered Fleece Hoodie',
+    subtitle: 'Linear Systems · Matte Obsidian Double-Knit Spacer Fleece',
+    category: 'heavyweight_hoodie',
+    placement: 'hero_rack',
+    price: 165,
+    primaryColor: '#191C24',
+    secondaryColor: '#2B303D',
+    accentColor: '#6875F5',
+    graphicHeadline: 'LINEAR // OS',
+    graphicSubtext: 'PRECISION CRAFT · SF · ZRH',
+    graphicMotif: 'orbital_rings',
+    materialFinish: 'brushed_fleece',
+    designRationale:
+      'Sculpted dark-mode technical hoodie featuring optical indigo orbital CAD geometry.',
+    featured: true,
+  },
+  {
+    id: 'ln-anodized-bomber',
+    sku: 'LN-SHL-02',
+    title: 'Anodized Shell Technical Jacket',
+    subtitle: 'Space-Gray Merino Tech Wool · Silver-Mist Contrast Sleeves',
+    category: 'varsity_jacket',
+    placement: 'capsule_rack',
+    price: 290,
+    primaryColor: '#222630',
+    secondaryColor: '#DCE1EC',
+    accentColor: '#6875F5',
+    graphicHeadline: 'LN-SYS',
+    graphicSubtext: 'RELEASE // 2026',
+    graphicMotif: 'geometric_grid',
+    materialFinish: 'merino_knit',
+    designRationale:
+      'Mirrors bead-blasted aluminum hardware and smoked-glass architecture.',
+  },
+  {
+    id: 'ln-supima-tee',
+    sku: 'LN-TEE-03',
+    title: 'Zero-Latency Supima Studio Tee',
+    subtitle: 'Optic White Mercerized Cotton · Micro-Grid Spec Print',
+    category: 'structured_tshirt',
+    placement: 'capsule_rack',
+    price: 68,
+    primaryColor: '#F2F4F8',
+    secondaryColor: '#181B22',
+    accentColor: '#6875F5',
+    graphicHeadline: 'SPEC 01',
+    graphicSubtext: '60FPS DESIGN ENGINEERING',
+    graphicMotif: 'minimal_typo',
+    materialFinish: 'combed_cotton',
+    designRationale:
+      'Crisp daylight-white studio tee contrasting against the matte obsidian slat wall.',
+  },
+  {
+    id: 'ln-method-hardcover',
+    sku: 'LN-BOOK-04',
+    title: 'The Linear Method: Craft & Velocity',
+    subtitle: 'Matte Obsidian Buckram Hardcover · Indigo Foil Diagram',
+    category: 'hardcover_book',
+    placement: 'center_table',
+    price: 58,
+    primaryColor: '#161921',
+    secondaryColor: '#EEF2FA',
+    accentColor: '#6875F5',
+    graphicHeadline: 'LINEAR METHOD',
+    graphicSubtext: 'PRINCIPLES OF PRODUCT CRAFT',
+    graphicMotif: 'orbital_rings',
+    designRationale:
+      'Canonical software-craft manifesto displayed on the cantilevered smoked-glass center table.',
+  },
+  {
+    id: 'ln-stealth-cap',
+    sku: 'LN-CAP-05',
+    title: 'Stealth Micro-Ripstop Studio Cap',
+    subtitle: 'Anodized Buckle Hardware · High-Density Orbital Glyph',
+    category: 'structured_cap',
+    placement: 'left_pedestal',
+    price: 52,
+    primaryColor: '#1B1F28',
+    secondaryColor: '#2A303D',
+    accentColor: '#6875F5',
+    graphicHeadline: 'LINEAR',
+    graphicSubtext: 'SYSTEMS STUDIO',
+    graphicMotif: 'orbital_rings',
+    materialFinish: 'heavy_canvas',
+    designRationale:
+      'Minimalist engineer cap perched cleanly on the left brushed-metal drum pedestal.',
+  },
+  {
+    id: 'ln-obsidian-mug',
+    sku: 'LN-MUG-06',
+    title: 'Matte Obsidian Porcelain Mug',
+    subtitle: 'Precision Straight-Wall Vessel · Satin Titanium Interior',
+    category: 'ceramic_mug',
+    placement: 'right_pedestal',
+    price: 38,
+    primaryColor: '#171A22',
+    secondaryColor: '#E2E6EE',
+    accentColor: '#6875F5',
+    graphicHeadline: 'SHIP FAST',
+    graphicSubtext: 'LINEAR // STUDIO',
+    graphicMotif: 'minimal_typo',
+    materialFinish: 'matte_stoneware',
+    designRationale:
+      'Desk-grade precision matte black ceramic mug on the right anodized gallery drum.',
+  },
+];
+
+/* ============================================================================
+   FOUR DISTINCT MULTI-ARCHETYPE 3D BOUTIQUE PRESETS
+   ============================================================================ */
+
 export const STORE_PRESETS: Record<string, StoreConfig> = {
   'good-shot-club': {
     id: 'good-shot-club',
     brandName: 'GOOD SHOT CLUB',
     tagline: 'CHAMPIONSHIP LAWN & COURT ARCHIVE',
     vibe: 'Heritage Wimbledon tennis club, collegiate warm minimalism',
+    archetype: 'heritage_arch_flagship',
+    brandEthos:
+      'Rooted in 1970s championship lawn tennis and collegiate racquet-club heritage—pairing unbleached combed cotton jersey with Wimbledon sage trim, brushed antique brass, and archival court typography.',
     palette: {
       wall: '#F3EFE6', // Warm Venetian limewash wall
       floor: '#DDD5C7', // Honed Roman travertine floor
@@ -110,11 +535,12 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
         ],
       },
     ],
+    products: GOOD_SHOT_PRODUCTS,
     architectNotes: [
-      'Extracted Wimbledon sage (#547049) ringer binding and unbleached ecru body (#F3EFE6) into a recessed fluted timber arch alcove framed by warm Venetian limewash.',
-      'Paired brushed antique brass faceout hardware (#C5A059) and sculpted American walnut hangers (#734F32) to echo vintage wooden tennis rackets.',
-      'Grounded the hero rack zone with honed Roman travertine (#DDD5C7), a woven oat bouclé rug, and a fluted travertine knitwear plinth.',
-      'Tuned gallery spotlighting to 3400K afternoon lawn-court sunlight with warm hidden LED cove wash so cream cotton folds read crisp without highlight clipping.',
+      'Constructed a Heritage Arch Flagship featuring a recessed semi-circular fluted sage alcove (#547049) framed by Venetian limewash (#F3EFE6).',
+      'Preserved the studio photo cutout of the Good Shot Club ringer tee on the brushed antique brass hero stand (#C5A059).',
+      'Anchored 3D club accessories across fluted Roman travertine pedestals and an American walnut merchandising table.',
+      'Tuned gallery spotlighting to 3400K afternoon lawn-court sunlight with warm hidden LED cove wash.',
     ],
   },
 
@@ -123,17 +549,20 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
     brandName: 'KINETIC LAB',
     tagline: 'TECHNICAL ARCHIVE // MILAN · SHIBUYA',
     vibe: 'Brutalist Milan/Tokyo streetwear gallery, monolithic poured concrete & industrial chrome',
+    archetype: 'avant_garde_concrete_loft',
+    brandEthos:
+      'Brutalist Milan-to-Shibuya technical apparel lab investigating monolithic cast-concrete spatial architecture, 480GSM loopback cotton armor, industrial chrome hardware, and safety-orange telemetry graphics.',
     palette: {
       wall: '#2B2C2E', // Raw board-formed poured concrete
       floor: '#1D1E20', // Dark charcoal aggregate terrazzo
-      accent: '#FF4D00', // Safety international orange architectural accent
+      accent: '#FF4D00', // Safety international orange architectural neon
       secondaryAccent: '#3A3C40', // Cast concrete reveal trim
       rackMetal: '#D8DCE0', // Precision brushed industrial chrome
       hangerWood: '#222222', // Matte ebonized ash hanger
-      plinth: '#25272A', // Monolithic dark basalt plinth
+      plinth: '#25272A', // Monolithic dark concrete cube plinth
       rug: '#2D2F33', // Charcoal low-pile architectural mat
       ambientLight: '#DCE5F2', // Crisp overcast daylight fill
-      spotLight: '#F4F7FF', // Cool 5000K museum halogen beam
+      spotLight: '#F4F7FF', // Cool 5000K theatrical halogen beam
     },
     metalRoughness: 0.16,
     metalness: 0.95,
@@ -148,12 +577,13 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
         style: 'hero_faceout',
         items: [
           {
-            id: 'good-shot-ringer-tee',
-            sku: 'KL-ARC-TEE-01',
-            title: 'Archive Graphic Contrast Tee',
-            subtitle: 'Kinetic Lab Capsule · 280GSM Heavyweight Jersey',
-            price: 68,
+            id: 'kl-monolith-hoodie',
+            sku: 'KL-ARC-HD-01',
+            title: 'Monolith 480GSM Box Hoodie',
+            subtitle: 'Kinetic Lab · Heavyweight Loopback Carbon Fleece',
+            price: 195,
             featured: true,
+            productSpec: KINETIC_CONCRETE_PRODUCTS[0],
             rawUrl: '/assets/raw-shirt.jpg',
             frontCutoutUrl: '/assets/garments/raw-shirt-front-cutout.png',
             backCutoutUrl: '/assets/garments/raw-shirt-back-cutout.png',
@@ -161,7 +591,7 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
             normalizedFrontCutoutUrl: '/assets/garments/normalized-front-cutout.png',
             normalizedBackCutoutUrl: '/assets/garments/normalized-back-cutout.png',
             normalizedNormalMapUrl: '/assets/garments/normalized-normal.png',
-            dominantHex: '#F2EEEB',
+            dominantHex: '#1E2024',
           },
         ],
       },
@@ -173,12 +603,13 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
         style: 'capsule_rail',
         items: [
           {
-            id: 'companion-cardigan',
-            sku: 'KL-STRUCT-02',
-            title: 'Structured Gauge Knit Layer',
-            subtitle: 'Heavy Tactile Stitch · Milan Studio Edition',
-            price: 240,
+            id: 'kl-stadium-varsity',
+            sku: 'KL-VARS-02',
+            title: 'Shibuya Technical Melton Jacket',
+            subtitle: 'Charcoal Ballistic Wool · Chalk Contrast Sleeves',
+            price: 340,
             featured: false,
+            productSpec: KINETIC_CONCRETE_PRODUCTS[1],
             rawUrl: '/assets/garments/companion-cardigan-front-cutout.png',
             frontCutoutUrl: '/assets/garments/companion-cardigan-front-cutout.png',
             backCutoutUrl: '/assets/garments/companion-cardigan-back-cutout.png',
@@ -186,15 +617,16 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
             normalizedFrontCutoutUrl: '/assets/garments/companion-cardigan-front-cutout.png',
             normalizedBackCutoutUrl: '/assets/garments/companion-cardigan-back-cutout.png',
             normalizedNormalMapUrl: '/assets/garments/companion-cardigan-normal.png',
-            dominantHex: '#EFE9DC',
+            dominantHex: '#25272C',
           },
           {
-            id: 'companion-polo',
-            sku: 'KL-TECH-03',
-            title: 'Mercerized Pique Knit Top',
-            subtitle: 'High-Twist Technical Cotton · Matte Snap Placket',
-            price: 135,
+            id: 'kl-telemetry-tee',
+            sku: 'KL-TEE-03',
+            title: 'Telemetry 280GSM Heavy Tee',
+            subtitle: 'Optic Chalk Combed Jersey · High-Density Grid Print',
+            price: 78,
             featured: false,
+            productSpec: KINETIC_CONCRETE_PRODUCTS[2],
             rawUrl: '/assets/garments/companion-polo-front-cutout.png',
             frontCutoutUrl: '/assets/garments/companion-polo-front-cutout.png',
             backCutoutUrl: '/assets/garments/companion-polo-back-cutout.png',
@@ -202,16 +634,17 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
             normalizedFrontCutoutUrl: '/assets/garments/companion-polo-front-cutout.png',
             normalizedBackCutoutUrl: '/assets/garments/companion-polo-back-cutout.png',
             normalizedNormalMapUrl: '/assets/garments/companion-polo-normal.png',
-            dominantHex: '#547049',
+            dominantHex: '#EDEFF2',
           },
         ],
       },
     ],
+    products: KINETIC_CONCRETE_PRODUCTS,
     architectNotes: [
-      'Morphed spatial shell to poured concrete (#2B2C2E) and dark charcoal terrazzo (#1D1E20) to create high-contrast gallery pop behind light garments.',
-      'Injected safety international orange (#FF4D00) into the recessed fluted alcove and cove light perimeter for unmistakable Tokyo/Milan drop urgency.',
-      'Swapped rack metallurgy to low-roughness brushed chrome (#D8DCE0) with matte ebonized ash hangers (#222222).',
-      'Shifted lighting rig to crisp cool-white museum track spots with city HDRI reflections for sharp specular edge definition.',
+      'Built an Avant-Garde Concrete Loft with board-formed poured concrete monolith slabs (#2B2C2E), tie-rod cone dimples, and twin structural concrete columns.',
+      'Sliced the feature wall with a vertical safety-orange (#FF4D00) architectural neon tube and raw bolted gunmetal signage.',
+      'Suspended a matte-black industrial box-truss rig overhead with 6 theatrical spotlight cans above polished charcoal terrazzo.',
+      'Populated raw concrete cube pedestals and slab table with Kinetic Lab cap, monograph, and cast-basalt espresso vessel.',
     ],
   },
 
@@ -219,18 +652,21 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
     id: 'kyoto-atelier',
     brandName: 'ATELIER HINOKI',
     tagline: 'ORGANIC TEXTILE STUDY // KYOTO',
-    vibe: 'Quiet luxury organic linen & fragrant hinoki timber sanctuary',
+    vibe: 'Quiet luxury organic linen, rammed-earth clay & fragrant white-oak sanctuary',
+    archetype: 'warm_artisanal_atelier',
+    brandEthos:
+      'Quiet-luxury Kyoto textile and botanical atelier celebrating Wakayama loopwheel organic cotton, undyed flax linen, warm rammed-earth clay plaster, architectural oak joinery, and wood-fired Shigaraki stoneware.',
     palette: {
-      wall: '#EAE0D0', // Hand-troweled warm sand juraku clay plaster
-      floor: '#C4A482', // Wide-plank natural Japanese cedar floor
-      accent: '#6B705C', // Smoked moss olive architectural slat panel
+      wall: '#EAE0D0', // Hand-troweled warm sand rammed-earth clay plaster
+      floor: '#D8C9B4', // Warm honed Kurama limestone & travertine slabs
+      accent: '#6B705C', // Smoked moss olive botanical accent
       secondaryAccent: '#DFD2BE', // Raw shikkui earth plaster trim
-      rackMetal: '#3A3532', // Hand-patinated blackened bronze rack
-      hangerWood: '#C89F70', // Unfinished aromatic hinoki cypress hanger
-      plinth: '#D8C8B0', // Honed Kurama sandstone & timber plinth
-      rug: '#D4C7B4', // Undyed hemp & organic linen weave mat
-      ambientLight: '#FFEBD2', // Diffused shoji screen amber fill
-      spotLight: '#FFDCA8', // Late-afternoon Kyoto golden-hour wash
+      rackMetal: '#3A3532', // Hand-patinated blackened bronze hardware
+      hangerWood: '#B98E63', // Unfinished natural white oak & hinoki timber
+      plinth: '#DDD0BC', // Honed warm limestone & oak craft plinth
+      rug: '#D4C5AE', // Woven natural jute & undyed bouclé rug
+      ambientLight: '#FFEBD2', // Diffused shoji skylight amber fill
+      spotLight: '#FFE0B2', // Warm 3000K Kyoto golden-hour wash
     },
     metalRoughness: 0.44,
     metalness: 0.78,
@@ -239,18 +675,19 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
     racks: [
       {
         id: 'hero-hinoki-faceout',
-        label: 'Tokonoma Alcove Stand',
+        label: 'Atelier Oak Stand',
         position: [0, 0, 0],
         rotationY: 0,
         style: 'hero_faceout',
         items: [
           {
-            id: 'good-shot-ringer-tee',
+            id: 'ah-loopwheel-tee',
             sku: 'AH-KYT-TEE-01',
-            title: 'Unbleached Loopwheel Ringer Tee',
-            subtitle: 'Atelier Hinoki · Wakayama Slow-Knit Organic Cotton',
-            price: 88,
+            title: 'Wakayama Loopwheel Organic Tee',
+            subtitle: 'Atelier Hinoki · Undyed Ecru Cotton & Smoked Moss Rib',
+            price: 94,
             featured: true,
+            productSpec: KYOTO_ATELIER_PRODUCTS[0],
             rawUrl: '/assets/raw-shirt.jpg',
             frontCutoutUrl: '/assets/garments/raw-shirt-front-cutout.png',
             backCutoutUrl: '/assets/garments/raw-shirt-back-cutout.png',
@@ -258,7 +695,7 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
             normalizedFrontCutoutUrl: '/assets/garments/normalized-front-cutout.png',
             normalizedBackCutoutUrl: '/assets/garments/normalized-back-cutout.png',
             normalizedNormalMapUrl: '/assets/garments/normalized-normal.png',
-            dominantHex: '#F2EEEB',
+            dominantHex: '#EFE7D8',
           },
         ],
       },
@@ -270,12 +707,13 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
         style: 'capsule_rail',
         items: [
           {
-            id: 'companion-cardigan',
-            sku: 'AH-LINEN-02',
-            title: 'Hand-Framed Raw Cotton Cardigan',
-            subtitle: 'Natural Ecru & Botanical Moss Dye Trim',
-            price: 215,
+            id: 'ah-moss-hoodie',
+            sku: 'AH-HD-02',
+            title: 'Botanical Dyed French Terry Hoodie',
+            subtitle: 'Kyoto Moss Olive · Unbleached Hemp Drawcords',
+            price: 210,
             featured: false,
+            productSpec: KYOTO_ATELIER_PRODUCTS[1],
             rawUrl: '/assets/garments/companion-cardigan-front-cutout.png',
             frontCutoutUrl: '/assets/garments/companion-cardigan-front-cutout.png',
             backCutoutUrl: '/assets/garments/companion-cardigan-back-cutout.png',
@@ -283,15 +721,16 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
             normalizedFrontCutoutUrl: '/assets/garments/companion-cardigan-front-cutout.png',
             normalizedBackCutoutUrl: '/assets/garments/companion-cardigan-back-cutout.png',
             normalizedNormalMapUrl: '/assets/garments/companion-cardigan-normal.png',
-            dominantHex: '#EFE9DC',
+            dominantHex: '#6B705C',
           },
           {
-            id: 'companion-polo',
-            sku: 'AH-MOSS-03',
-            title: 'Botanical Dyed Slub Knit Polo',
-            subtitle: 'Kyoto Moss Olive · Smoked Trochus Shell Buttons',
-            price: 128,
+            id: 'ah-linen-blouson',
+            sku: 'AH-JKT-03',
+            title: 'Raw Flax & Hinoki Chore Jacket',
+            subtitle: 'Hand-Loomed Oatmeal Linen · Patinated Bronze Snaps',
+            price: 275,
             featured: false,
+            productSpec: KYOTO_ATELIER_PRODUCTS[2],
             rawUrl: '/assets/garments/companion-polo-front-cutout.png',
             frontCutoutUrl: '/assets/garments/companion-polo-front-cutout.png',
             backCutoutUrl: '/assets/garments/companion-polo-back-cutout.png',
@@ -299,16 +738,121 @@ export const STORE_PRESETS: Record<string, StoreConfig> = {
             normalizedFrontCutoutUrl: '/assets/garments/companion-polo-front-cutout.png',
             normalizedBackCutoutUrl: '/assets/garments/companion-polo-back-cutout.png',
             normalizedNormalMapUrl: '/assets/garments/companion-polo-normal.png',
-            dominantHex: '#547049',
+            dominantHex: '#C8B79E',
           },
         ],
       },
     ],
+    products: KYOTO_ATELIER_PRODUCTS,
     architectNotes: [
-      'Reinterpreted the central arch as a calm Kyoto tokonoma alcove in smoked moss olive (#6B705C) set within warm juraku sand clay plaster (#EAE0D0).',
-      'Grounded the space with natural Japanese cedar flooring (#C4A482) and an undyed hemp-linen area weave (#D4C7B4).',
-      'Specified hand-patinated blackened bronze rails (#3A3532) and aromatic pale hinoki cypress hangers (#C89F70) for quiet luxury tactility.',
-      'Bathed the showroom in low-angle 2900K golden-hour light to emphasize natural slub cotton texture and soft shadow falloff.',
+      'Crafted a Warm Artisanal Atelier framing a wide vertical white-oak timber louver screen (#B98E63) inside hand-troweled rammed-earth plaster (#EAE0D0).',
+      'Spanned warm architectural oak ceiling rafters beneath a diffused 3000K golden skylight wash.',
+      'Grounded the sanctuary with honed limestone slabs, a woven natural jute rug, and a sculptural ceramic floor amphora with dried stems.',
+      'Staged amber apothecary oil, Kurashiki shuttle-loom tote, and wood-fired Shigaraki tea stoneware across timber-and-stone plinths.',
+    ],
+  },
+
+  'linear-systems': {
+    id: 'linear-systems',
+    brandName: 'LINEAR SYSTEMS',
+    tagline: 'PRECISION HARDWARE & APPAREL // SF · ZURICH',
+    vibe: 'Minimalist anodized aluminum & smoked-glass tech pavilion, 0.1mm design studio',
+    archetype: 'minimalist_tech_pavilion',
+    brandEthos:
+      'Design-engineering flagship translating high-velocity software precision into matte anodized obsidian aluminum architecture, smoked optical glass, coffered daylight panels, and 0.1mm-tolerance studio objects.',
+    palette: {
+      wall: '#14161C', // Matte anodized obsidian aluminum panels
+      floor: '#1A1D24', // Large-format rectified dark basalt slate slabs
+      accent: '#6875F5', // Signature optical indigo-violet LED accent
+      secondaryAccent: '#252934', // Bead-blasted space-gray aluminum reveal
+      rackMetal: '#E2E6EE', // Precision anodized silver-titanium hardware
+      hangerWood: '#1D2028', // Matte carbon-billet hanger
+      plinth: '#20242E', // Brushed space-gray metal & obsidian drum
+      rug: '#171A21', // Low-profile monochrome technical architectural mat
+      ambientLight: '#E4ECFF', // Crisp coffered daylight sky wash
+      spotLight: '#F5F8FF', // Pure 5400K optical studio beam
+    },
+    metalRoughness: 0.18,
+    metalness: 0.94,
+    lightingPreset: 'cool_gallery_spot',
+    textures: {},
+    racks: [
+      {
+        id: 'hero-linear-faceout',
+        label: 'Precision Stand 01',
+        position: [0, 0, 0],
+        rotationY: 0,
+        style: 'hero_faceout',
+        items: [
+          {
+            id: 'ln-precision-hoodie',
+            sku: 'LN-OS-HD-01',
+            title: '0.1mm Engineered Fleece Hoodie',
+            subtitle: 'Linear Systems · Matte Obsidian Double-Knit Spacer Fleece',
+            price: 165,
+            featured: true,
+            productSpec: LINEAR_SYSTEMS_PRODUCTS[0],
+            rawUrl: '/assets/raw-shirt.jpg',
+            frontCutoutUrl: '/assets/garments/raw-shirt-front-cutout.png',
+            backCutoutUrl: '/assets/garments/raw-shirt-back-cutout.png',
+            normalMapUrl: '/assets/garments/raw-shirt-normal.png',
+            normalizedFrontCutoutUrl: '/assets/garments/normalized-front-cutout.png',
+            normalizedBackCutoutUrl: '/assets/garments/normalized-back-cutout.png',
+            normalizedNormalMapUrl: '/assets/garments/normalized-normal.png',
+            dominantHex: '#191C24',
+          },
+        ],
+      },
+      {
+        id: 'linear-capsule-rail',
+        label: 'Modular Studio Rail 02',
+        position: [-1.58, 0, -0.58],
+        rotationY: 0.34,
+        style: 'capsule_rail',
+        items: [
+          {
+            id: 'ln-anodized-bomber',
+            sku: 'LN-SHL-02',
+            title: 'Anodized Shell Technical Jacket',
+            subtitle: 'Space-Gray Merino Tech Wool · Silver-Mist Contrast Sleeves',
+            price: 290,
+            featured: false,
+            productSpec: LINEAR_SYSTEMS_PRODUCTS[1],
+            rawUrl: '/assets/garments/companion-cardigan-front-cutout.png',
+            frontCutoutUrl: '/assets/garments/companion-cardigan-front-cutout.png',
+            backCutoutUrl: '/assets/garments/companion-cardigan-back-cutout.png',
+            normalMapUrl: '/assets/garments/companion-cardigan-normal.png',
+            normalizedFrontCutoutUrl: '/assets/garments/companion-cardigan-front-cutout.png',
+            normalizedBackCutoutUrl: '/assets/garments/companion-cardigan-back-cutout.png',
+            normalizedNormalMapUrl: '/assets/garments/companion-cardigan-normal.png',
+            dominantHex: '#222630',
+          },
+          {
+            id: 'ln-supima-tee',
+            sku: 'LN-TEE-03',
+            title: 'Zero-Latency Supima Studio Tee',
+            subtitle: 'Optic White Mercerized Cotton · Micro-Grid Spec Print',
+            price: 68,
+            featured: false,
+            productSpec: LINEAR_SYSTEMS_PRODUCTS[2],
+            rawUrl: '/assets/garments/companion-polo-front-cutout.png',
+            frontCutoutUrl: '/assets/garments/companion-polo-front-cutout.png',
+            backCutoutUrl: '/assets/garments/companion-polo-back-cutout.png',
+            normalMapUrl: '/assets/garments/companion-polo-normal.png',
+            normalizedFrontCutoutUrl: '/assets/garments/companion-polo-front-cutout.png',
+            normalizedBackCutoutUrl: '/assets/garments/companion-polo-back-cutout.png',
+            normalizedNormalMapUrl: '/assets/garments/companion-polo-normal.png',
+            dominantHex: '#F2F4F8',
+          },
+        ],
+      },
+    ],
+    products: LINEAR_SYSTEMS_PRODUCTS,
+    architectNotes: [
+      'Engineered a Minimalist Tech Pavilion featuring a floor-to-ceiling matte obsidian slat grid divided by vertical cool-LED channels (#6875F5).',
+      'Mounted a floating backlit smoked-glass & brushed-titanium monolith sign beneath a luminous 4×3 coffered frosted daylight ceiling.',
+      'Grounded the showroom with rectified dark basalt slabs and a cantilevered brushed-steel & smoked-glass display table.',
+      'Curated Linear Method hardcover, stealth micro-ripstop cap, and matte obsidian studio mug across cylindrical metal pedestals.',
     ],
   },
 };

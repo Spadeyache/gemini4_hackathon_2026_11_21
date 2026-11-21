@@ -1,11 +1,19 @@
 import * as THREE from 'three';
 import type { GarmentResolvedTextures } from '../../components/BoutiqueRack';
 import { processGarmentInBrowser } from '../../lib/garmentProcessor';
-import type { GarmentAssetSet, RackPlacement, StoreConfig } from '../../types/storeConfig';
+import type {
+  GarmentAssetSet,
+  RackPlacement,
+  StoreConfig,
+  WorldArchetypeId,
+} from '../../types/storeConfig';
 
 export type IngestSourceType = 'shopify' | 'jsonld' | 'html_meta';
 
 export type IngestProgressStage =
+  | 'analyzing_identity'
+  | 'designing_theme'
+  | 'building_world'
   | 'scraping_catalog'
   | 'extracting_dna'
   | 'normalizing_garments';
@@ -38,6 +46,11 @@ export interface BrandIngestSummary {
   brandName: string;
   tagline: string;
   vibe: string;
+  brandEthos: string;
+  archetype: WorldArchetypeId;
+  inventedProductCount: number;
+  hangingApparelCount: number;
+  pedestalObjectCount: number;
   sourceType: IngestSourceType;
   usedGemini: boolean;
   rawProductCount: number;
@@ -61,6 +74,20 @@ interface IngestApiResponse {
   error?: string;
 }
 
+export function formatWorldArchetypeLabel(archetype?: WorldArchetypeId): string {
+  switch (archetype) {
+    case 'minimalist_tech_pavilion':
+      return 'Minimalist Tech Pavilion';
+    case 'warm_artisanal_atelier':
+      return 'Warm Artisanal Atelier';
+    case 'avant_garde_concrete_loft':
+      return 'Avant-Garde Concrete Loft';
+    case 'heritage_arch_flagship':
+    default:
+      return 'Heritage Arch Flagship';
+  }
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -78,11 +105,11 @@ function canvasTextureToDataUrl(tex: THREE.CanvasTexture): string | undefined {
 }
 
 /**
- * End-to-end client ingestion pipeline:
- * 1. Calls `POST /api/ingest-url` to scrape Shopify JSON / JSON-LD / HTML & synthesize Brand DNA `StoreConfig`
- * 2. Runs `processGarmentInBrowser` in parallel across every scraped garment via `/api/proxy-image`
- *    (CIELAB studio cutout + un-mirrored 360° back synthesis + Sobel cotton micro-weave normal map)
- * 3. Returns `{ storeConfig, resolvedTexturesById, summary }` ready for instant 3D boutique rendering
+ * End-to-end client Creative Director ingestion pipeline (~1–3s total):
+ * 1. Calls `POST /api/ingest-url` to parse website identity, ethos, CSS colors & invent a 6-product 3D line + WorldArchetypeId
+ * 2. Skips unnecessary slow image cutouts for parametric 3D `productSpec` garments, running browser cutouts
+ *    ONLY when an item explicitly carries a verified `customCutoutUrl`
+ * 3. Returns `{ storeConfig, resolvedTexturesById, summary }` ready for instant 3D showroom construction
  */
 export async function ingestBrandWebsite(
   url: string,
@@ -91,30 +118,29 @@ export async function ingestBrandWebsite(
 ): Promise<BrandWebsiteIngestResult> {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) {
-    throw new Error('Please enter a store or brand website URL.');
+    throw new Error('Please enter any website or brand URL.');
   }
 
   const startedAt = performance.now();
   const onProgress = options?.onProgress;
 
   onProgress?.({
-    stage: 'scraping_catalog',
+    stage: 'analyzing_identity',
     stepNumber: 1,
-    label: '1. Scraping Brand & Catalog...',
-    detail: `Probing ${trimmedUrl} storefront & catalog endpoints`,
+    label: '1. Analyzing Website Identity & Ethos...',
+    detail: `Parsing ${trimmedUrl} headlines, manifesto copy & CSS brand tokens`,
   });
 
-  // Transition UI smoothly to Step 2 if server probe + optional Gemini call takes >420ms
   let enteredStep2 = false;
   const step2Timer = window.setTimeout(() => {
     enteredStep2 = true;
     onProgress?.({
-      stage: 'extracting_dna',
+      stage: 'designing_theme',
       stepNumber: 2,
-      label: '2. Extracting Brand DNA...',
-      detail: 'Synthesizing spatial palette, lighting rig & architectural materials',
+      label: '2. Designing Store Theme & Product Line...',
+      detail: 'Selecting 3D architectural archetype, WCAG palette & inventing 6 bespoke products',
     });
-  }, 420);
+  }, 360);
 
   let apiPayload: IngestApiResponse;
   try {
@@ -129,7 +155,7 @@ export async function ingestBrandWebsite(
     if (!response.ok || !data.storeConfig) {
       throw new Error(
         data.error ||
-          `Failed to ingest ${trimmedUrl} (HTTP ${response.status}). Check that the Vite server plugin is enabled.`
+          `Failed to generate 3D shop from ${trimmedUrl} (HTTP ${response.status}). Check that the Vite server plugin is running.`
       );
     }
     apiPayload = data as IngestApiResponse;
@@ -137,137 +163,130 @@ export async function ingestBrandWebsite(
     window.clearTimeout(step2Timer);
   }
 
+  const archetype: WorldArchetypeId =
+    apiPayload.storeConfig.archetype ?? 'heritage_arch_flagship';
+  const archetypeLabel = formatWorldArchetypeLabel(archetype);
+
   if (!enteredStep2) {
     onProgress?.({
-      stage: 'extracting_dna',
+      stage: 'designing_theme',
       stepNumber: 2,
-      label: '2. Extracting Brand DNA...',
-      detail: `${apiPayload.storeConfig.brandName} · ${apiPayload.storeConfig.vibe}`,
+      label: '2. Designing Store Theme & Product Line...',
+      detail: `${apiPayload.storeConfig.brandName} · ${archetypeLabel}`,
     });
-    await delay(180);
+    await delay(95);
   }
 
-  const rawItems: GarmentAssetSet[] = apiPayload.storeConfig.racks.flatMap((r) => r.items);
-  if (rawItems.length === 0) {
-    throw new Error(`No wearable product images were found on ${trimmedUrl}.`);
-  }
+  const allRackItems: GarmentAssetSet[] = apiPayload.storeConfig.racks.flatMap((r) => r.items);
+  const inventedProducts = apiPayload.storeConfig.products ?? [];
+  const totalProductCount = inventedProducts.length || allRackItems.length;
 
-  let completedCount = 0;
   onProgress?.({
-    stage: 'normalizing_garments',
+    stage: 'building_world',
     stepNumber: 3,
-    label: '3. Normalizing Garments for 3D Racks...',
-    detail: `Processing ${rawItems.length} garments (CIELAB cutout + 360° back + Sobel normal)`,
+    label: '3. Building 3D World & Merchandising Fixtures...',
+    detail: `Constructing ${archetypeLabel} & merchandising ${totalProductCount} bespoke 3D products`,
     completedGarments: 0,
-    totalGarments: rawItems.length,
+    totalGarments: totalProductCount,
   });
 
-  const settled = await Promise.allSettled(
-    rawItems.map(async (item) => {
-      const processed = await processGarmentInBrowser(item.rawUrl, tolerance);
-      processed.normalTexture.colorSpace = THREE.NoColorSpace;
-      const normalDataUrl = canvasTextureToDataUrl(processed.normalTexture);
+  const resolvedTexturesById: Record<string, IngestedGarmentTextures> = {};
+  const enrichedItemById = new Map<string, GarmentAssetSet>();
 
-      completedCount += 1;
-      onProgress?.({
-        stage: 'normalizing_garments',
-        stepNumber: 3,
-        label: '3. Normalizing Garments for 3D Racks...',
-        detail: `Normalized ${completedCount}/${rawItems.length}: ${item.title}`,
-        completedGarments: completedCount,
-        totalGarments: rawItems.length,
-      });
-
-      const enrichedItem: GarmentAssetSet = {
-        ...item,
-        frontCutoutUrl: processed.previewDataUrl,
-        backCutoutUrl: processed.backPreviewDataUrl,
-        normalMapUrl: normalDataUrl,
-        normalizedFrontCutoutUrl: processed.previewDataUrl,
-        normalizedBackCutoutUrl: processed.backPreviewDataUrl,
-        normalizedNormalMapUrl: normalDataUrl,
-        dominantHex: processed.dominantHex,
-        aspect: processed.aspect,
-      };
-
-      const resolvedEntry: IngestedGarmentTextures = {
-        frontMap: processed.frontTexture,
-        backMap: processed.backTexture,
-        normalMap: processed.normalTexture,
-        aspect: processed.aspect,
-        dominantHex: processed.dominantHex,
-        accentHex: processed.accentHex,
-        previewDataUrl: processed.previewDataUrl,
-        backPreviewDataUrl: processed.backPreviewDataUrl,
-        normalDataUrl,
-        dispose: processed.dispose,
-      };
-
-      return { enrichedItem, resolvedEntry };
-    })
+  // Only run browser CIELAB image cutouts when an item explicitly provides a verified customCutoutUrl
+  const itemsNeedingCutout = allRackItems.filter((item) =>
+    Boolean(item.productSpec?.customCutoutUrl || (!item.productSpec && item.rawUrl))
   );
 
-  const succeeded = settled
-    .filter(
-      (
-        r
-      ): r is PromiseFulfilledResult<{
-        enrichedItem: GarmentAssetSet;
-        resolvedEntry: IngestedGarmentTextures;
-      }> => r.status === 'fulfilled'
-    )
-    .map((r) => r.value);
+  if (itemsNeedingCutout.length > 0) {
+    let completedCount = 0;
+    await Promise.allSettled(
+      itemsNeedingCutout.map(async (item) => {
+        const cutoutSource = item.productSpec?.customCutoutUrl || item.rawUrl;
+        if (!cutoutSource) return;
 
-  if (succeeded.length === 0) {
-    throw new Error(
-      `Product images from ${trimmedUrl} could not be decoded for 3D cutout processing. Try another storefront URL.`
+        const processed = await processGarmentInBrowser(cutoutSource, tolerance);
+        processed.normalTexture.colorSpace = THREE.NoColorSpace;
+        const normalDataUrl = canvasTextureToDataUrl(processed.normalTexture);
+
+        completedCount += 1;
+        onProgress?.({
+          stage: 'building_world',
+          stepNumber: 3,
+          label: '3. Building 3D World & Merchandising Fixtures...',
+          detail: `Normalized ${completedCount}/${itemsNeedingCutout.length}: ${item.title}`,
+          completedGarments: completedCount,
+          totalGarments: itemsNeedingCutout.length,
+        });
+
+        enrichedItemById.set(item.id, {
+          ...item,
+          frontCutoutUrl: processed.previewDataUrl,
+          backCutoutUrl: processed.backPreviewDataUrl,
+          normalMapUrl: normalDataUrl,
+          normalizedFrontCutoutUrl: processed.previewDataUrl,
+          normalizedBackCutoutUrl: processed.backPreviewDataUrl,
+          normalizedNormalMapUrl: normalDataUrl,
+          dominantHex: processed.dominantHex,
+          aspect: processed.aspect,
+        });
+
+        resolvedTexturesById[item.id] = {
+          frontMap: processed.frontTexture,
+          backMap: processed.backTexture,
+          normalMap: processed.normalTexture,
+          aspect: processed.aspect,
+          dominantHex: processed.dominantHex,
+          accentHex: processed.accentHex,
+          previewDataUrl: processed.previewDataUrl,
+          backPreviewDataUrl: processed.backPreviewDataUrl,
+          normalDataUrl,
+          dispose: processed.dispose,
+        };
+      })
     );
+  } else {
+    // Brief visual beat so Step 3 renders crisply in HUD while parametric 3D geometries mount
+    await delay(90);
   }
 
-  const resolvedTexturesById: Record<string, IngestedGarmentTextures> = {};
-  for (const { enrichedItem, resolvedEntry } of succeeded) {
-    resolvedTexturesById[enrichedItem.id] = resolvedEntry;
-  }
-
-  // Ensure Rack 0 has the primary hero garment and Rack 1 holds up to 3 capsule companions
-  const heroAsset: GarmentAssetSet = {
-    ...succeeded[0].enrichedItem,
-    featured: true,
-  };
-  const companionAssets: GarmentAssetSet[] = succeeded.slice(1, 4).map((s) => ({
-    ...s.enrichedItem,
-    featured: false,
+  const updatedRacks: RackPlacement[] = apiPayload.storeConfig.racks.map((rack, rackIdx) => ({
+    ...rack,
+    items: rack.items.map((item, itemIdx) => {
+      const enriched = enrichedItemById.get(item.id) ?? item;
+      return {
+        ...enriched,
+        featured: rackIdx === 0 && itemIdx === 0,
+      };
+    }),
   }));
-
-  const baseHeroRack = apiPayload.storeConfig.racks[0];
-  const baseCapsuleRack = apiPayload.storeConfig.racks[1];
-
-  const updatedRacks: RackPlacement[] = [
-    {
-      id: baseHeroRack?.id ?? 'ingested-hero-faceout',
-      label: baseHeroRack?.label ?? `${apiPayload.storeConfig.brandName} Hero Stand`,
-      position: baseHeroRack?.position ?? [0, 0, 0],
-      rotationY: baseHeroRack?.rotationY ?? 0,
-      style: 'hero_faceout',
-      items: [heroAsset],
-    },
-  ];
-
-  if (companionAssets.length > 0) {
-    updatedRacks.push({
-      id: baseCapsuleRack?.id ?? 'ingested-capsule-rail',
-      label: baseCapsuleRack?.label ?? `${apiPayload.storeConfig.brandName} Capsule Rail`,
-      position: baseCapsuleRack?.position ?? [-1.58, 0, -0.58],
-      rotationY: baseCapsuleRack?.rotationY ?? 0.34,
-      style: 'capsule_rail',
-      items: companionAssets,
-    });
-  }
 
   const finalStoreConfig: StoreConfig = {
     ...apiPayload.storeConfig,
+    archetype,
+    textures: {},
     racks: updatedRacks,
   };
+
+  const heroItem = updatedRacks[0]?.items[0];
+  const heroProductSpec = inventedProducts[0];
+  const heroGarmentId = heroItem?.id ?? heroProductSpec?.id ?? 'ingested-hero-01';
+  const heroTitle = heroItem?.title ?? heroProductSpec?.title ?? `${finalStoreConfig.brandName} Signature Piece`;
+
+  const hangingApparelCount =
+    inventedProducts.filter(
+      (p) => p.placement === 'hero_rack' || p.placement === 'capsule_rack'
+    ).length || updatedRacks.reduce((sum, r) => sum + r.items.length, 0);
+
+  const pedestalObjectCount = inventedProducts.filter(
+    (p) =>
+      p.placement === 'center_table' ||
+      p.placement === 'left_pedestal' ||
+      p.placement === 'right_pedestal'
+  ).length;
+
+  const inventedProductCount =
+    inventedProducts.length || hangingApparelCount + pedestalObjectCount;
 
   const elapsedMs = Math.round(performance.now() - startedAt);
 
@@ -276,12 +295,19 @@ export async function ingestBrandWebsite(
     brandName: finalStoreConfig.brandName,
     tagline: finalStoreConfig.tagline,
     vibe: finalStoreConfig.vibe,
+    brandEthos:
+      finalStoreConfig.brandEthos ||
+      `${finalStoreConfig.brandName} reimagined as a ${archetypeLabel} with ${inventedProductCount} bespoke 3D products.`,
+    archetype,
+    inventedProductCount,
+    hangingApparelCount,
+    pedestalObjectCount,
     sourceType: apiPayload.sourceType,
     usedGemini: apiPayload.usedGemini,
     rawProductCount: apiPayload.rawProductCount,
-    processedGarmentCount: succeeded.length,
-    heroGarmentId: heroAsset.id,
-    heroTitle: heroAsset.title,
+    processedGarmentCount: inventedProductCount,
+    heroGarmentId,
+    heroTitle,
     elapsedMs,
   };
 

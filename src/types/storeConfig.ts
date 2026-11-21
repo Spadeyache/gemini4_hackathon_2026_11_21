@@ -3,6 +3,66 @@ export type LightingPreset =
   | 'cool_gallery_spot'
   | 'kyoto_golden_hour';
 
+export type WorldArchetypeId =
+  | 'heritage_arch_flagship'
+  | 'minimalist_tech_pavilion'
+  | 'warm_artisanal_atelier'
+  | 'avant_garde_concrete_loft';
+
+export type ProductCategory3D =
+  | 'heavyweight_hoodie'
+  | 'structured_tshirt'
+  | 'varsity_jacket'
+  | 'ceramic_mug'
+  | 'structured_cap'
+  | 'canvas_tote'
+  | 'hardcover_book'
+  | 'apothecary_bottle';
+
+export type ProductGraphicMotif =
+  | 'monogram_crest'
+  | 'geometric_grid'
+  | 'botanical_line'
+  | 'minimal_typo'
+  | 'archival_seal'
+  | 'orbital_rings';
+
+export type ProductPlacementZone =
+  | 'hero_rack'
+  | 'capsule_rack'
+  | 'center_table'
+  | 'left_pedestal'
+  | 'right_pedestal';
+
+export interface InventedProductSpec {
+  id: string;
+  sku: string;
+  title: string;
+  subtitle: string;
+  category: ProductCategory3D;
+  placement: ProductPlacementZone;
+  price: number;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  graphicHeadline: string;
+  graphicSubtext?: string;
+  graphicMotif: ProductGraphicMotif;
+  materialFinish?:
+    | 'combed_cotton'
+    | 'brushed_fleece'
+    | 'merino_knit'
+    | 'matte_stoneware'
+    | 'frosted_glass'
+    | 'heavy_canvas';
+  designRationale: string;
+  shopifyProductUrl?: string;
+  shopifyVariantId?: string;
+  featured?: boolean;
+  /** Optional photo texture URL only when rendering an explicit uploaded/catalog garment cutout */
+  customCutoutUrl?: string;
+}
+
 export type GarmentRenderMode = 'volumetric' | 'naive_flat';
 export type GarmentSourceMode = 'ai_normalized' | 'raw_cutout' | 'custom_upload';
 
@@ -13,23 +73,17 @@ export interface GarmentAssetSet {
   subtitle?: string;
   price: number;
   featured?: boolean;
-  /** Raw source image before cutout */
+  /** Optional 3D product specification for bespoke parametric apparel silhouettes */
+  productSpec?: InventedProductSpec;
+  /** Raw source image before cutout (optional for pure 3D parametric products) */
   rawUrl: string;
-  /** Pre-processed RGBA cutout front (optional, falls back to client cutout) */
   frontCutoutUrl?: string;
-  /** Pre-processed RGBA cutout back (optional, falls back to synthesized back) */
   backCutoutUrl?: string;
-  /** Tangent-space normal map URL (optional, falls back to client Sobel normal map) */
   normalMapUrl?: string;
-  /** AI-normalized hanging front cutout URL */
   normalizedFrontCutoutUrl?: string;
-  /** AI-normalized hanging back cutout URL */
   normalizedBackCutoutUrl?: string;
-  /** AI-normalized normal map URL */
   normalizedNormalMapUrl?: string;
-  /** Base garment body hex for hanger/edge fallback */
   dominantHex?: string;
-  /** Aspect ratio width / height */
   aspect?: number;
 }
 
@@ -67,12 +121,17 @@ export interface StoreConfig {
   brandName: string;
   tagline: string;
   vibe: string;
+  archetype?: WorldArchetypeId;
+  sourceUrl?: string;
+  brandEthos?: string;
   palette: StorePalette;
   metalRoughness: number;
   metalness: number;
   lightingPreset: LightingPreset;
   textures: StoreTextures;
   racks: RackPlacement[];
+  /** Multi-category 3D products (hanging apparel + pedestal/table objects) invented for this brand */
+  products?: InventedProductSpec[];
   architectNotes: string[];
 }
 
