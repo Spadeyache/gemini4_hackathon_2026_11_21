@@ -1517,9 +1517,8 @@ export const ShopperSwarmLayer: React.FC<ShopperSwarmLayerProps> = ({
       }
     }
 
-    if (badgeUpdates) {
-      const patch = badgeUpdates;
-      setBadges((prev) => ({ ...prev, ...patch }));
+    if (hasBadgeUpdates) {
+      setBadges((prev) => ({ ...prev, ...badgeUpdates }));
     }
   });
 

@@ -6,16 +6,36 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
+  Gamepad2,
   Layers,
   Sparkles,
   Sliders,
   Upload,
+  Users,
   Wand2,
 } from 'lucide-react';
 import { BoutiqueWorld } from './components/BoutiqueWorld';
-import { BoutiqueRack, type GarmentResolvedTextures, type RackGarmentItem } from './components/BoutiqueRack';
+import {
+  BoutiqueRack,
+  type GarmentResolvedTextures,
+  type RackGarmentItem,
+} from './components/BoutiqueRack';
 import { CAMERA_PRESETS, CameraRig, type CameraPresetId } from './components/CameraRig';
 import { DEFAULT_PRESET_ID, DEFAULT_TUNING_PARAMS, STORE_PRESETS } from './data/presets';
+import { UrlIngestBar } from './features/ingestion/UrlIngestBar';
+import type {
+  BrandWebsiteIngestResult,
+  IngestedGarmentTextures,
+} from './features/ingestion/urlBrandIngest';
+import {
+  RobloxControlsHint,
+  RobloxPlayerController,
+  type PlayerPovMode,
+} from './features/player/RobloxPlayerController';
+import {
+  ShopperSwarmLayer,
+  type ShopperConversionStats,
+} from './features/shoppers/ShopperSwarmLayer';
 import { processGarmentInBrowser, type ProcessedGarmentTextures } from './lib/garmentProcessor';
 import { extractLivePaletteFromImage } from './services/boutiquePipeline';
 import type {
@@ -37,6 +57,8 @@ function getInitialQueryParams() {
       source: undefined as GarmentSourceMode | undefined,
       layout: 'split_racks' as RackLayoutMode,
       sway: undefined as number | undefined,
+      walk: false,
+      swarm: false,
       hideHud: false,
       instantCam: false,
     };
@@ -61,6 +83,8 @@ function getInitialQueryParams() {
         ? layoutParam
         : ('split_racks' as RackLayoutMode),
     sway: swayParam !== null ? Number(swayParam) : undefined,
+    walk: params.get('walk') === '1',
+    swarm: params.get('swarm') === '1',
     hideHud: params.get('hud') === '0',
     instantCam: params.has('cam'),
   };
@@ -99,14 +123,24 @@ export default function App() {
   const init = useMemo(() => getInitialQueryParams(), []);
 
   const [presetId, setPresetId] = useState<string>(init.preset);
+  const [ingestedStore, setIngestedStore] = useState<StoreConfig | null>(null);
+  const [ingestedTexturesById, setIngestedTexturesById] = useState<
+    Record<string, IngestedGarmentTextures>
+  >({});
+
   const [customPaletteOverride, setCustomPaletteOverride] = useState<{
     wall?: string;
     accent?: string;
   } | null>(null);
-  const [autoAdaptWorld, setAutoAdaptWorld] = useState<boolean>(true);
+  const [autoAdaptWorld] = useState<boolean>(true);
 
   const [cameraPreset, setCameraPreset] = useState<CameraPresetId>(init.cam);
   const [instantCamera, setInstantCamera] = useState<boolean>(init.instantCam);
+  const [walkMode, setWalkMode] = useState<boolean>(init.walk);
+  const [povMode, setPovMode] = useState<PlayerPovMode>('third_person');
+  const [swarmEnabled, setSwarmEnabled] = useState<boolean>(init.swarm);
+  const [conversionStats, setConversionStats] = useState<ShopperConversionStats | null>(null);
+
   const [layoutMode, setLayoutMode] = useState<RackLayoutMode>(init.layout);
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(
     'good-shot-ringer-tee'
@@ -140,7 +174,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeConfig: StoreConfig = useMemo(() => {
-    const base = STORE_PRESETS[presetId] ?? STORE_PRESETS[DEFAULT_PRESET_ID];
+    const base = ingestedStore ?? STORE_PRESETS[presetId] ?? STORE_PRESETS[DEFAULT_PRESET_ID];
     if (!customPaletteOverride) return base;
     return {
       ...base,
@@ -150,10 +184,11 @@ export default function App() {
         ...(customPaletteOverride.accent ? { accent: customPaletteOverride.accent } : {}),
       },
     };
-  }, [presetId, customPaletteOverride]);
+  }, [ingestedStore, presetId, customPaletteOverride]);
 
-  // Load pre-baked cutout & normal textures for all items in the active preset
+  // Load pre-baked cutout & normal textures for preset items (skip items already in ingestedTexturesById)
   useEffect(() => {
+    if (ingestedStore) return;
     let cancelled = false;
     const allItems: GarmentAssetSet[] = activeConfig.racks.flatMap((r) => r.items);
 
@@ -216,14 +251,14 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeConfig.racks]);
+  }, [activeConfig.racks, ingestedStore]);
 
   // Run live browser cutout processor when user uploads a custom file OR switches to live raw cutout tuning
   useEffect(() => {
     const sourceToProcess =
       tuning.sourceMode === 'custom_upload' && uploadedSourceBlob
         ? uploadedSourceBlob
-        : tuning.sourceMode === 'raw_cutout'
+        : !ingestedStore && tuning.sourceMode === 'raw_cutout'
           ? '/assets/raw-shirt.jpg'
           : null;
 
@@ -256,7 +291,20 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [tuning.sourceMode, tuning.cutoutTolerance, uploadedSourceBlob]);
+  }, [tuning.sourceMode, tuning.cutoutTolerance, uploadedSourceBlob, ingestedStore]);
+
+  const handleIngestComplete = useCallback((result: BrandWebsiteIngestResult) => {
+    setIngestedTexturesById((prev) => {
+      Object.values(prev).forEach((t) => t.dispose());
+      return result.resolvedTexturesById;
+    });
+    setCustomPaletteOverride(null);
+    setUploadedFileName(null);
+    setIngestedStore(result.storeConfig);
+    setConversionStats(null);
+    setSelectedGarmentId(result.summary.heroGarmentId);
+    setTuning((p) => ({ ...p, sourceMode: 'ai_normalized', renderMode: 'volumetric' }));
+  }, []);
 
   const handleUploadedFile = useCallback(
     (file: File) => {
@@ -311,28 +359,42 @@ export default function App() {
 
   const resolveItemTextures = useCallback(
     (item: GarmentAssetSet, isHeroItem: boolean): GarmentResolvedTextures | undefined => {
-      if (isHeroItem) {
-        if (
-          (tuning.sourceMode === 'custom_upload' || tuning.sourceMode === 'raw_cutout') &&
-          liveHeroProcessed
-        ) {
-          return {
-            frontMap: liveHeroProcessed.frontTexture,
-            backMap: liveHeroProcessed.backTexture,
-            normalMap: liveHeroProcessed.normalTexture,
-            aspect: liveHeroProcessed.aspect,
-          };
-        }
-        const entry = bakedTextures[item.id];
-        if (tuning.sourceMode === 'raw_cutout' && entry?.raw) {
-          return entry.raw;
-        }
-        return entry?.normalized ?? entry?.raw;
+      if (isHeroItem && tuning.sourceMode === 'custom_upload' && liveHeroProcessed) {
+        return {
+          frontMap: liveHeroProcessed.frontTexture,
+          backMap: liveHeroProcessed.backTexture,
+          normalMap: liveHeroProcessed.normalTexture,
+          aspect: liveHeroProcessed.aspect,
+        };
       }
+
+      // Live URL-ingested brand garments
+      const ingested = ingestedTexturesById[item.id];
+      if (ingested) {
+        return {
+          frontMap: ingested.frontMap,
+          backMap: ingested.backMap,
+          normalMap: ingested.normalMap,
+          aspect: ingested.aspect,
+        };
+      }
+
+      if (isHeroItem && tuning.sourceMode === 'raw_cutout' && liveHeroProcessed) {
+        return {
+          frontMap: liveHeroProcessed.frontTexture,
+          backMap: liveHeroProcessed.backTexture,
+          normalMap: liveHeroProcessed.normalTexture,
+          aspect: liveHeroProcessed.aspect,
+        };
+      }
+
       const entry = bakedTextures[item.id];
+      if (isHeroItem && tuning.sourceMode === 'raw_cutout' && entry?.raw) {
+        return entry.raw;
+      }
       return entry?.normalized ?? entry?.raw;
     },
-    [bakedTextures, liveHeroProcessed, tuning.sourceMode]
+    [bakedTextures, ingestedTexturesById, liveHeroProcessed, tuning.sourceMode]
   );
 
   // Build resolved RackGarmentItems for hero rack & secondary rack
@@ -359,7 +421,7 @@ export default function App() {
           }
         : null;
 
-    const companions: RackGarmentItem[] = (secondRack?.items ?? [])
+    const extraHeroItems: RackGarmentItem[] = (heroRack?.items.slice(1) ?? [])
       .map((c) => {
         const tex = resolveItemTextures(c, false);
         if (!tex) return null;
@@ -375,6 +437,24 @@ export default function App() {
       })
       .filter((x): x is RackGarmentItem => x !== null);
 
+    const secondItems: RackGarmentItem[] = (secondRack?.items ?? [])
+      .map((c) => {
+        const tex = resolveItemTextures(c, false);
+        if (!tex) return null;
+        return {
+          id: c.id,
+          sku: c.sku,
+          title: c.title,
+          subtitle: c.subtitle,
+          price: c.price,
+          featured: false,
+          ...tex,
+        } as RackGarmentItem;
+      })
+      .filter((x): x is RackGarmentItem => x !== null);
+
+    const allCompanions = [...extraHeroItems, ...secondItems];
+
     if (layoutMode === 'solo') {
       return {
         heroRackItems: heroItem ? [heroItem] : [],
@@ -383,14 +463,16 @@ export default function App() {
     }
     if (layoutMode === 'hero_trio') {
       return {
-        heroRackItems: heroItem ? [heroItem, ...companions] : companions,
+        heroRackItems: heroItem
+          ? [heroItem, ...allCompanions.slice(0, 2)]
+          : allCompanions.slice(0, 3),
         secondaryRackItems: [] as RackGarmentItem[],
       };
     }
-    // split_racks: Hero centerpiece at [0,0,0] + flanking capsule rack in background
+    // split_racks: Hero rack items on rack[0] + secondary rack items on rack[1]
     return {
-      heroRackItems: heroItem ? [heroItem] : [],
-      secondaryRackItems: companions,
+      heroRackItems: heroItem ? [heroItem, ...extraHeroItems] : extraHeroItems,
+      secondaryRackItems: secondItems,
     };
   }, [
     activeConfig.racks,
@@ -403,24 +485,24 @@ export default function App() {
   const effectiveTuning = useMemo(
     () => ({
       ...tuning,
-      // Keep sleeveRelax minimal when using already physics-warped normalized cutout so we don't double-droop sleeves
       sleeveRelax:
-        tuning.sourceMode === 'ai_normalized'
+        !ingestedStore && tuning.sourceMode === 'ai_normalized'
           ? Math.min(tuning.sleeveRelax, 0.22)
           : tuning.sleeveRelax,
       showCapsuleCompanions: layoutMode !== 'solo',
     }),
-    [tuning, layoutMode]
+    [tuning, layoutMode, ingestedStore]
   );
 
   const selectCamera = (cam: CameraPresetId) => {
+    setWalkMode(false);
     setInstantCamera(false);
     setCameraPreset(cam);
   };
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      {/* Full-Screen 3D Boutique Viewport (100% of screen; minimal HUD overlays <14%) */}
+      {/* Full-Screen 3D Boutique Viewport (≥85% screen open per Hackathon Rule) */}
       <Canvas
         shadows
         dpr={[1, 2]}
@@ -434,7 +516,8 @@ export default function App() {
       >
         <color attach="background" args={[activeConfig.palette.wall]} />
         <fog attach="fog" args={[activeConfig.palette.wall, 11, 23]} />
-        <CameraRig preset={cameraPreset} instant={instantCamera} />
+
+        {!walkMode && <CameraRig preset={cameraPreset} instant={instantCamera} />}
 
         <BoutiqueWorld config={activeConfig}>
           {/* Centre Court Hero Stand */}
@@ -462,6 +545,29 @@ export default function App() {
               tuning={effectiveTuning}
               selectedGarmentId={selectedGarmentId}
               onSelectGarment={setSelectedGarmentId}
+            />
+          )}
+
+          {/* Roblox-Style 3rd/1st-Person Walkable Avatar Mode */}
+          {walkMode && (
+            <RobloxPlayerController
+              config={activeConfig}
+              enabled={walkMode}
+              povMode={povMode}
+              onPovModeChange={setPovMode}
+              showSecondaryRack={secondaryRackItems.length > 0}
+              onInteractGarment={(gid) => setSelectedGarmentId(gid)}
+            />
+          )}
+
+          {/* Live Synthetic Shopper Swarm (6 Personas Walking & Voting YES/NO) */}
+          {swarmEnabled && (
+            <ShopperSwarmLayer
+              config={activeConfig}
+              enabled={swarmEnabled}
+              showSecondaryRack={secondaryRackItems.length > 0}
+              resetKey={activeConfig.id}
+              onConversionUpdate={setConversionStats}
             />
           )}
         </BoutiqueWorld>
@@ -498,6 +604,14 @@ export default function App() {
 
       {!init.hideHud && (
         <>
+          {/* Top-Center Live Website-to-3D-Brand-Shop Generator */}
+          <UrlIngestBar
+            onIngestComplete={handleIngestComplete}
+            cutoutTolerance={tuning.cutoutTolerance}
+            variant="floating"
+            defaultExpandedChips={false}
+          />
+
           {/* Top-Left Brand DNA Badge */}
           <div
             style={{
@@ -505,7 +619,8 @@ export default function App() {
               top: 16,
               left: 16,
               zIndex: 20,
-              background: 'rgba(18, 18, 17, 0.76)',
+              maxWidth: 290,
+              background: 'rgba(18, 18, 17, 0.78)',
               backdropFilter: 'blur(12px)',
               border: '1px solid rgba(255, 255, 255, 0.11)',
               borderRadius: 12,
@@ -519,19 +634,19 @@ export default function App() {
             <div>
               <div
                 style={{
-                  fontSize: 10,
-                  letterSpacing: '0.16em',
+                  fontSize: 9.5,
+                  letterSpacing: '0.15em',
                   textTransform: 'uppercase',
                   color: '#d4af37',
                   fontWeight: 600,
                 }}
               >
-                GEMINI 4 · ELEMENT 119 BOUTIQUE ENGINE
+                GEMINI 4 · ELEMENT 119 ENGINE
               </div>
               <div
                 style={{
                   fontFamily: "'Cormorant Garamond', Georgia, serif",
-                  fontSize: 20,
+                  fontSize: 19,
                   fontWeight: 600,
                   letterSpacing: '0.06em',
                   color: '#f7f4ec',
@@ -540,13 +655,21 @@ export default function App() {
               >
                 {activeConfig.brandName}
               </div>
-              <div style={{ fontSize: 11, color: 'rgba(245,242,235,0.68)' }}>
+              <div
+                style={{
+                  fontSize: 10.5,
+                  color: 'rgba(245,242,235,0.68)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: 195,
+                }}
+              >
                 {activeConfig.vibe}
               </div>
             </div>
 
-            {/* Extracted DNA Swatches */}
-            <div style={{ display: 'flex', gap: 5, paddingLeft: 6 }}>
+            <div style={{ display: 'flex', gap: 4 }}>
               {[
                 activeConfig.palette.wall,
                 activeConfig.palette.floor,
@@ -557,8 +680,8 @@ export default function App() {
                   key={idx}
                   title={`Brand DNA ${hex}`}
                   style={{
-                    width: 14,
-                    height: 14,
+                    width: 13,
+                    height: 13,
                     borderRadius: '50%',
                     background: hex,
                     border: '1px solid rgba(255,255,255,0.35)',
@@ -568,28 +691,49 @@ export default function App() {
             </div>
           </div>
 
-          {/* Bottom-Center Camera & Before/After Quality Bar */}
+          {/* Roblox Controls Hint Pill when Walk Mode is Active */}
+          {walkMode && (
+            <div
+              style={{
+                position: 'fixed',
+                bottom: 68,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 20,
+              }}
+            >
+              <RobloxControlsHint
+                povMode={povMode}
+                onTogglePov={() =>
+                  setPovMode((p) => (p === 'third_person' ? 'first_person' : 'third_person'))
+                }
+              />
+            </div>
+          )}
+
+          {/* Bottom-Center Camera, Roblox Walk Mode, Shopper Swarm & Quality Compare Bar */}
           <div
             style={{
               position: 'fixed',
-              bottom: 18,
+              bottom: 16,
               left: '50%',
               transform: 'translateX(-50%)',
               zIndex: 20,
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              background: 'rgba(18, 18, 17, 0.8)',
+              gap: 5,
+              flexWrap: 'nowrap',
+              background: 'rgba(18, 18, 17, 0.84)',
               backdropFilter: 'blur(12px)',
               border: '1px solid rgba(255,255,255,0.12)',
               borderRadius: 999,
-              padding: '6px 8px',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+              padding: '6px 9px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.38)',
             }}
           >
-            <Camera size={14} style={{ marginLeft: 6, opacity: 0.65 }} />
+            <Camera size={13} style={{ marginLeft: 5, opacity: 0.65 }} />
             {(Object.keys(CAMERA_PRESETS) as CameraPresetId[]).map((id) => {
-              const active = cameraPreset === id;
+              const active = !walkMode && cameraPreset === id;
               return (
                 <button
                   key={id}
@@ -597,13 +741,13 @@ export default function App() {
                   style={{
                     border: 'none',
                     cursor: 'pointer',
-                    padding: '6px 11px',
+                    padding: '5px 10px',
                     borderRadius: 999,
-                    fontSize: 11.5,
+                    fontSize: 11,
                     fontWeight: active ? 600 : 500,
                     background: active ? '#d4af37' : 'transparent',
                     color: active ? '#151412' : 'rgba(245,242,235,0.82)',
-                    transition: 'all 0.15s ease',
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {CAMERA_PRESETS[id].label}
@@ -616,11 +760,67 @@ export default function App() {
                 width: 1,
                 height: 18,
                 background: 'rgba(255,255,255,0.15)',
-                margin: '0 4px',
+                margin: '0 3px',
               }}
             />
 
-            {/* 1-Click Judge Demo Toggle: Volumetric 3D Cloth vs Naive Flat Cutout */}
+            {/* Roblox Walkable Mode Toggle */}
+            <button
+              onClick={() => setWalkMode((w) => !w)}
+              style={{
+                border: walkMode
+                  ? '1px solid rgba(212, 175, 55, 0.85)'
+                  : '1px solid rgba(255,255,255,0.18)',
+                cursor: 'pointer',
+                padding: '5px 11px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: walkMode
+                  ? 'rgba(212, 175, 55, 0.28)'
+                  : 'rgba(255,255,255,0.06)',
+                color: '#f7f4ec',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Gamepad2 size={13} color="#e7c96b" />
+              {walkMode ? 'Walking Store (WASD)' : 'Walk Store (Roblox)'}
+            </button>
+
+            {/* Synthetic Shopper Swarm Toggle */}
+            <button
+              onClick={() => setSwarmEnabled((s) => !s)}
+              style={{
+                border: swarmEnabled
+                  ? '1px solid rgba(110, 210, 145, 0.7)'
+                  : '1px solid rgba(255,255,255,0.18)',
+                cursor: 'pointer',
+                padding: '5px 11px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: swarmEnabled
+                  ? 'rgba(54, 138, 85, 0.38)'
+                  : 'rgba(255,255,255,0.06)',
+                color: '#f7f4ec',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Users size={13} color={swarmEnabled ? '#8ef0b0' : '#d8d4ca'} />
+              {swarmEnabled
+                ? conversionStats && conversionStats.totalDecisions > 0
+                  ? `Shoppers: ${Math.round(conversionStats.conversionRate * 100)}% YES (${conversionStats.buys}/${conversionStats.totalDecisions})`
+                  : 'Shoppers Active...'
+                : 'Release Shoppers'}
+            </button>
+
+            {/* 1-Click Judge Compare Toggle */}
             <button
               onClick={() =>
                 setTuning((p) => ({
@@ -628,42 +828,44 @@ export default function App() {
                   renderMode: p.renderMode === 'volumetric' ? 'naive_flat' : 'volumetric',
                 }))
               }
-              title="Toggle between our 3D Volumetric Dual-Shell Cloth + Hanger vs. a standard flat 2D cutout"
+              title="Compare our 3D Volumetric Dual-Shell Cloth + Hanger vs. a standard flat 2D cutout"
               style={{
                 border:
                   tuning.renderMode === 'volumetric'
                     ? '1px solid rgba(124, 184, 108, 0.55)'
                     : '1px solid rgba(235, 110, 90, 0.55)',
                 cursor: 'pointer',
-                padding: '6px 12px',
+                padding: '5px 11px',
                 borderRadius: 999,
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                gap: 5,
                 background:
                   tuning.renderMode === 'volumetric'
                     ? 'rgba(84, 112, 73, 0.42)'
                     : 'rgba(180, 62, 48, 0.35)',
                 color: '#f7f4ec',
+                whiteSpace: 'nowrap',
               }}
             >
-              <Sparkles size={13} color={tuning.renderMode === 'volumetric' ? '#a6e094' : '#ff9b8a'} />
-              {tuning.renderMode === 'volumetric'
-                ? '3D Volumetric Cloth: ON'
-                : 'Naive Flat Cutout (Compare)'}
+              <Sparkles
+                size={12}
+                color={tuning.renderMode === 'volumetric' ? '#a6e094' : '#ff9b8a'}
+              />
+              {tuning.renderMode === 'volumetric' ? '3D Cloth: ON' : 'Flat Cutout'}
             </button>
           </div>
 
-          {/* Top-Right Compact Boutique Inspector (<14% screen area, collapsible) */}
+          {/* Top-Right Compact Boutique Inspector */}
           <div
             style={{
               position: 'fixed',
               top: 16,
               right: 16,
               zIndex: 20,
-              width: 282,
+              width: 274,
               maxHeight: 'calc(100vh - 96px)',
               overflowY: 'auto',
               background: 'rgba(18, 18, 17, 0.80)',
@@ -868,15 +1070,16 @@ export default function App() {
                     }}
                   >
                     <Eye size={11} />
-                    <span>Generated 3D World DNA (`storeConfig`)</span>
+                    <span>Preset Brand Worlds</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {Object.values(STORE_PRESETS).map((preset) => {
-                      const active = preset.id === presetId;
+                      const active = !ingestedStore && preset.id === presetId;
                       return (
                         <button
                           key={preset.id}
                           onClick={() => {
+                            setIngestedStore(null);
                             setCustomPaletteOverride(null);
                             setPresetId(preset.id);
                           }}
