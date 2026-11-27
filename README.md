@@ -1,9 +1,9 @@
 # MyBrand
 
-MyBrand is a personal 3D world for small and midsize creators to share with fans. The idea is simple: share a few images and website links, let AI interpret your style, and give each fan a space that responds to what catches their eye.
+MyBrand gives small and midsize creators a personal 3D world to share with fans. A creator shares images and website links so AI can pick up their style. As each fan explores, the world can change which products it puts on display.
 
-![Kestrel & Clay’s 3D boutique, with a central plinth and a glowing path toward the kiln bench](docs/images/boutique.png)
+![Field guides and coastal prints on the wooden deck of Sora Takahashi’s North Cove Pier, overlooking the Pacific](docs/images/sora-takahashi.png)
 
-In the Kestrel & Clay prototype, you can walk through a ceramics studio and inspect its pieces. Your visit can change which product sits on the central plinth and where the floor path leads next.
+On Sora Takahashi’s North Cove Pier, you can browse a tidepool field guide or stop by the kelp prints. What you inspect can change the piece on the central stand and where the blue path leads next.
 
-**Try it locally.** From `mybrand-starter/mybrand`, run `npm ci` and `npm run dev`, then open [Kestrel & Clay](http://localhost:5173/b/demo-brand).
+**Try it locally.** From `mybrand-starter/mybrand`, run `npm ci` and `npm run dev`. Open [North Cove Pier](http://localhost:5173/b/sora-takahashi-99ea66) in a checkout with Sora’s saved world. Fresh clones include the [ceramics demo](http://localhost:5173/b/demo-brand).
