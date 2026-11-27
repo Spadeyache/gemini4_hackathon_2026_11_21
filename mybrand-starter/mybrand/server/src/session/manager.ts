@@ -9,7 +9,7 @@ import type {
 import { loadSessionConfig } from "../boot";
 import type { SessionAdapterMode } from "../env";
 import { createHydrogenClient } from "./hydrogen";
-import { evaluateRules } from "./rules";
+import { evaluateRules, evaluateThematicFallback } from "./rules";
 import { computeSignals, toModelSignalsPayload } from "./signals";
 import { attachSseClient, broadcastSse, closeAllSse } from "./sse";
 import type {
@@ -227,6 +227,130 @@ export class SessionManager {
     return true;
   }
 
+  /**
+   * Explicit demo trigger ("Adapt Now" / Ctrl+U): bypasses first_change_after_s
+   * and cooldown_s so the presenter can immediately ask gemini-4-hydrogen to adapt
+   * products, lighting, signage, guide path, and host_note to recent selections.
+   * All §5 levers, allowed values, copy caps, and session caps remain strictly enforced.
+   */
+  async forceAdaptNow(sessionId: string): Promise<SseOpsPayload | null> {
+    const session = this.getSession(sessionId);
+    if (!session) return null;
+
+    session.lastActivityMs = this.clock();
+    if (session.tickInFlight) return null;
+
+    const rawNowS = round2(this.computeNowS(session));
+    const effectiveNowS = Math.max(
+      rawNowS,
+      session.config.policy.limits.first_change_after_s + 1
+    );
+    if (session.applied.length >= session.config.policy.limits.max_ops_per_session) {
+      return null;
+    }
+
+    session.tickInFlight = true;
+    try {
+      const signals = computeSignals(
+        session.events,
+        session.config.catalog,
+        effectiveNowS
+      );
+
+      // 1. Prefer live gemini-4-hydrogen when available (except rules_only mode)
+      if (this.adapterMode !== "rules_only" && this.adapterClient.isAvailable()) {
+        const modelInput = this.buildAdapterInput(
+          session,
+          signals,
+          effectiveNowS
+        );
+        const deadlineMs = Math.max(
+          session.config.policy.limits.deadline_ms,
+          9_000
+        );
+        const modelRes = await this.adapterClient.propose(modelInput, deadlineMs);
+
+        if (modelRes.ok && this.sessions.get(sessionId) === session) {
+          const latestSignals = computeSignals(
+            session.events,
+            session.config.catalog,
+            effectiveNowS
+          );
+          const validated = validateOps(modelRes.output.ops, {
+            config: session.config,
+            state: session.state,
+            signals: latestSignals,
+            now_s: effectiveNowS,
+            appliedCount: session.applied.length,
+            lastChangeAtS: session.lastChangeAtS,
+            leverLastChangedAtS: session.leverLastChangedAtS,
+            skipTimingGates: true,
+          });
+          if (validated.accepted.length > 0) {
+            return this.applyAndBroadcast(session, validated.accepted, {
+              source: "model",
+              latency_ms: modelRes.latency_ms,
+              visitor_read:
+                modelRes.output.visitor_read || "tailored to your recent picks",
+              confidence: modelRes.output.confidence,
+              now_s: rawNowS,
+            });
+          }
+        } else if (!modelRes.ok) {
+          this.logger(
+            `[session:${session.id.slice(0, 8)}] forceAdaptNow fallback (${modelRes.timedOut ? "timeout" : "error"}, ${modelRes.latency_ms}ms): ${modelRes.error}`
+          );
+        }
+      }
+
+      // 2. Fallback: deterministic thematic match or top firing rule (skipping timing gates)
+      const thematic = evaluateThematicFallback(
+        {
+          config: session.config,
+          state: session.state,
+          signals,
+          applied: session.applied,
+          now_s: effectiveNowS,
+          lastChangeAtS: session.lastChangeAtS,
+          leverLastChangedAtS: session.leverLastChangedAtS,
+        },
+        { skipTimingGates: true }
+      );
+      if (thematic) {
+        return this.applyAndBroadcast(session, thematic.ops, {
+          source: "rules",
+          latency_ms: 1,
+          visitor_read: thematic.visitor_read,
+          confidence: thematic.confidence,
+          now_s: rawNowS,
+        });
+      }
+
+      const ruleMatch = evaluateRules({
+        config: session.config,
+        state: session.state,
+        signals,
+        applied: session.applied,
+        now_s: effectiveNowS,
+        lastChangeAtS: null,
+        leverLastChangedAtS: {},
+      });
+      if (ruleMatch) {
+        return this.applyAndBroadcast(session, [ruleMatch.op], {
+          source: "rules",
+          latency_ms: 1,
+          visitor_read: ruleMatch.visitor_read,
+          confidence: ruleMatch.confidence,
+          now_s: rawNowS,
+        });
+      }
+
+      return null;
+    } finally {
+      session.tickInFlight = false;
+    }
+  }
+
   async tickSession(
     sessionId: string,
     options?: { nowSOverride?: number }
@@ -253,6 +377,114 @@ export class SessionManager {
       if (effectiveMode === "rules_only") {
         const rulePayload = this.runRulesAndApply(session, signals, nowS);
         if (rulePayload) emitted.push(rulePayload);
+      } else if (effectiveMode === "hybrid") {
+        // 1. Instant deterministic policy rule (~1ms) if one matches right now.
+        const rulePayload = this.runRulesAndApply(session, signals, nowS);
+        if (rulePayload) {
+          emitted.push(rulePayload);
+        }
+
+        // 2. Live gemini-4-hydrogen multi-op thematic adaptation across all allowed levers
+        //    (swapping matching-theme products, signage, lighting, guide path, and host_note).
+        const remainingBudget =
+          session.config.policy.limits.max_ops_per_session -
+          session.applied.length;
+        const hasSignal =
+          signals.recent_events.length > 0 &&
+          (rulePayload !== null ||
+            signals.recent_events.some(
+              (ev) =>
+                ev.type === "inspect" ||
+                ev.type === "add_to_cart" ||
+                ev.type === "look"
+            ));
+
+        let modelApplied = false;
+        if (
+          hasSignal &&
+          remainingBudget > 0 &&
+          this.sessions.get(sessionId) === session
+        ) {
+          const modelInput = this.buildAdapterInput(session, signals, nowS);
+          const modelDeadlineMs = Math.max(
+            session.config.policy.limits.deadline_ms,
+            session.config.policy.limits.cooldown_s * 1000
+          );
+          const modelRes = await this.adapterClient.propose(
+            modelInput,
+            modelDeadlineMs
+          );
+          if (modelRes.ok && this.sessions.get(sessionId) === session) {
+            const latestSignals = computeSignals(
+              session.events,
+              session.config.catalog,
+              nowS
+            );
+            const validated = validateOps(modelRes.output.ops, {
+              config: session.config,
+              state: session.state,
+              signals: latestSignals,
+              now_s: nowS,
+              appliedCount: session.applied.length,
+              lastChangeAtS: session.lastChangeAtS,
+              leverLastChangedAtS: session.leverLastChangedAtS,
+              skipCooldownCheck: rulePayload !== null,
+            });
+            if (validated.accepted.length > 0) {
+              const modelPayload = this.applyAndBroadcast(
+                session,
+                validated.accepted,
+                {
+                  source: "model",
+                  latency_ms: modelRes.latency_ms,
+                  visitor_read:
+                    modelRes.output.visitor_read ||
+                    rulePayload?.visitor_read ||
+                    "tailoring boutique theme",
+                  confidence: modelRes.output.confidence,
+                  now_s: nowS,
+                }
+              );
+              emitted.push(modelPayload);
+              modelApplied = true;
+            }
+          } else if (!modelRes.ok) {
+            this.logger(
+              `[session:${session.id.slice(0, 8)}] hybrid model fallback (${modelRes.timedOut ? "timeout" : "error"}, ${modelRes.latency_ms}ms): ${modelRes.error}`
+            );
+          }
+        }
+
+        // 3. If neither hardcoded rules nor model applied an edit yet, try deterministic theme matching.
+        if (
+          !rulePayload &&
+          !modelApplied &&
+          this.sessions.get(sessionId) === session
+        ) {
+          const thematic = evaluateThematicFallback({
+            config: session.config,
+            state: session.state,
+            signals,
+            applied: session.applied,
+            now_s: nowS,
+            lastChangeAtS: session.lastChangeAtS,
+            leverLastChangedAtS: session.leverLastChangedAtS,
+          });
+          if (thematic) {
+            const fallbackPayload = this.applyAndBroadcast(
+              session,
+              thematic.ops,
+              {
+                source: "rules",
+                latency_ms: 1,
+                visitor_read: thematic.visitor_read,
+                confidence: thematic.confidence,
+                now_s: nowS,
+              }
+            );
+            emitted.push(fallbackPayload);
+          }
+        }
       } else if (effectiveMode === "rules_plus_host_note") {
         const rulePayload = this.runRulesAndApply(session, signals, nowS);
         if (rulePayload) {

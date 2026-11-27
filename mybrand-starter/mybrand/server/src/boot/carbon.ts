@@ -88,6 +88,7 @@ export const BOOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
       "- For room.wall_asset: generate a wide '16:9' clean open panoramic environment horizon vista capturing the host's authentic real-world setting (e.g., expansive Pacific ocean swells meeting misty dawn cliffs and a distant lighthouse for an ocean brand, wide airport runway & parked jets under twilight sky for an aviation/flights brand, sunlit garden canopy or warm craft workshop panorama — open unobstructed horizon with NO foreground pillars, window frames, or duplicated interior rooms, because the 3D pavilion itself provides foreground architecture).",
       "- For room.floor_asset: generate a matching realistic ground/floor surface texture (e.g., coastal boardwalk/sand, terrazzo terminal floor, warm terracotta tile, workshop timber).",
       "- For poster and product_image assets: generate photorealistic, high-craft studio visuals grounded in the host's actual materials and palette.",
+      "Catalog & slot tip for live adaptation: design 8-10 varied products across distinct themes/tags, and place 5-6 on initial zone slots so 2-4 themed catalog products remain ready off-slot for gemini-4-hydrogen to swap onto the hero plinth and zone displays based on each visitor's selections.",
     ].join(" "),
     parametersJsonSchema: {
       type: "object",

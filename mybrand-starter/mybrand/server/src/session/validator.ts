@@ -28,6 +28,8 @@ export interface ValidationContext {
   allowedPathFilter?: (path: string) => boolean;
   /** Skip session-level cooldown check (used only when pairing a model host_note with a same-tick rule op). */
   skipCooldownCheck?: boolean;
+  /** Skip timing gates (first_change_after_s, cooldown_s, lever_min_interval_s) for explicit demo "Adapt Now" triggers. */
+  skipTimingGates?: boolean;
 }
 
 export interface RejectedOp {
@@ -177,7 +179,7 @@ export function validateOps(
   const rejected: RejectedOp[] = [];
   const { limits } = ctx.config.policy;
 
-  if (ctx.now_s < limits.first_change_after_s) {
+  if (!ctx.skipTimingGates && ctx.now_s < limits.first_change_after_s) {
     for (const op of candidates) {
       rejected.push({
         op,
@@ -188,6 +190,7 @@ export function validateOps(
   }
 
   if (
+    !ctx.skipTimingGates &&
     !ctx.skipCooldownCheck &&
     ctx.lastChangeAtS !== null &&
     ctx.now_s - ctx.lastChangeAtS < limits.cooldown_s
@@ -290,6 +293,7 @@ export function validateOps(
 
     const lastLeverAt = ctx.leverLastChangedAtS[op.path];
     if (
+      !ctx.skipTimingGates &&
       lastLeverAt !== undefined &&
       ctx.now_s - lastLeverAt < limits.lever_min_interval_s
     ) {
