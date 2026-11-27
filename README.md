@@ -1,24 +1,9 @@
 # MyBrand
 
-MyBrand explores a simple idea for small and midsize creators: give fans a personal 3D world they can walk into. A creator shares images and website links, AI interprets their style, and the space changes what it puts on display as each fan explores.
+MyBrand is a personal 3D world for small and midsize creators to share with fans. The idea is simple: share a few images and website links, let AI interpret your style, and give each fan a space that responds to what catches their eye.
 
-## Inside the prototype
+![Kestrel & Clay’s 3D boutique, with a central plinth and a glowing path toward the kiln bench](docs/images/boutique.png)
 
-Kestrel & Clay, the demo ceramics studio, lets you try the fan experience. Walk through the boutique and inspect a piece that catches your eye. If you linger in a collection or inspect a product, the shop can spotlight a related piece on the central plinth or point you toward another display. Those changes belong to your visit.
+In the Kestrel & Clay prototype, you can walk through a ceramics studio and inspect its pieces. Your visit can change which product sits on the central plinth and where the floor path leads next.
 
-<p>
-  <img src="mybrand-starter/mybrand/fixtures/demo-brand/assets/p_espresso_cup.svg" width="190" alt="Kestrel &amp; Clay espresso cup illustration">
-  <img src="mybrand-starter/mybrand/fixtures/demo-brand/assets/p_ash_glaze_dripper.svg" width="190" alt="Kestrel &amp; Clay ash-glaze coffee dripper illustration">
-</p>
-
-*The espresso cup and ash-glaze dripper are two pieces from the demo catalog.*
-
-## Try the demo
-
-```sh
-cd mybrand-starter/mybrand
-npm ci
-npm run dev
-```
-
-Open [Kestrel & Clay](http://localhost:5173/b/demo-brand) for the prebuilt boutique. The [studio homepage](http://localhost:5173) also has the creator flow for building a boutique from your own material.
+**Try it locally.** From `mybrand-starter/mybrand`, run `npm ci` and `npm run dev`, then open [Kestrel & Clay](http://localhost:5173/b/demo-brand).
